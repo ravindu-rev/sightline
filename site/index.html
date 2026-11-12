@@ -28,7 +28,7 @@
     <nav aria-label="Sections">
       <a href="#demo">Demo</a>
       <a href="#finds">What it finds</a>
-      <a href="#start">Get started</a>
+      <a href="#start">Team setup</a>
       <a href="https://github.com/ravindu-rev/sightline">GitHub</a>
     </nav>
   </header>
@@ -42,10 +42,10 @@
         </div>
         <div class="get">
           <div class="command">
-            <code id="install-command">dotnet tool install --global Co.Revington.Sightline</code>
+            <code id="install-command">dnx Co.Revington.Sightline</code>
             <button type="button" class="copy" data-copy="install-command">Copy</button>
           </div>
-          <p class="fine">Version {{version}} on <a href="https://www.nuget.org/packages/Co.Revington.Sightline">NuGet</a>. Free and open source under the MIT license. Needs the .NET 10 SDK or newer.</p>
+          <p class="fine">Run it in a folder with a <code>.sln</code> and the map opens. Nothing gets installed. Needs the .NET 10 SDK. Version {{version}} on <a href="https://www.nuget.org/packages/Co.Revington.Sightline">NuGet</a>, free and open source under the MIT license.</p>
         </div>
       </div>
     </section>
@@ -191,29 +191,43 @@
 
     <section id="start" class="start" aria-labelledby="start-title">
       <div class="wrap">
-        <h2 id="start-title">Get started</h2>
+        <h2 id="start-title">Set it up for your team</h2>
+        <p class="intro">Do it once in your repository. Everyone who clones it then gets the same version and the same settings, with nothing to install by hand.</p>
         <ol class="route">
           <li>
-            <h3>Install</h3>
+            <h3>Set up the solution</h3>
             <div class="command small">
-              <code id="step-install">dotnet tool install --global Co.Revington.Sightline</code>
-              <button type="button" class="copy" data-copy="step-install">Copy</button>
+              <code id="step-init">dnx Co.Revington.Sightline init</code>
+              <button type="button" class="copy" data-copy="step-init">Copy</button>
             </div>
-            <p>Needs the .NET 10 SDK or newer.</p>
+            <p>Run it in the folder with your <code>.sln</code>. It pins Sightline in <code>dotnet-tools.json</code>, writes <code>sightline.json</code>, and adds a VS Code task when the folder uses VS Code.</p>
           </li>
           <li>
-            <h3>Point it at a solution</h3>
+            <h3>Open the map</h3>
             <div class="command small">
-              <code id="step-run">sightline path\to\Your.sln</code>
+              <code id="step-run">dotnet sightline</code>
               <button type="button" class="copy" data-copy="step-run">Copy</button>
             </div>
-            <p>Run <code>dotnet restore</code> first so references resolve. A <code>.sln</code>, <code>.slnx</code> or <code>.csproj</code> file works, and so does a folder.</p>
+            <p>Works from any folder in the repository. Packages are restored first when needed. Press <kbd>/</kbd> in the map to find a class, method or endpoint.</p>
           </li>
           <li>
-            <h3>Explore</h3>
-            <p>Your browser opens the map at <code>localhost:5210</code>. Press <kbd>/</kbd> to find a class, method or endpoint. Edit in the page or in your own editor.</p>
+            <h3>Share it</h3>
+            <p>Commit <code>dotnet-tools.json</code> and <code>sightline.json</code>. Teammates run <code>dotnet tool restore</code> once, then <code>dotnet sightline</code>.</p>
           </li>
         </ol>
+
+        <div class="two settings">
+          <div>
+            <h3>Settings live in the repository</h3>
+            <p><code>sightline.json</code> names the solution to open and the projects to leave off the map, such as tests or samples that would crowd it. Editors that read JSON schemas suggest the settings as you type.</p>
+            <p>Just for yourself? <code>dotnet tool install --global Co.Revington.Sightline</code>, then run <code>sightline</code> in any solution folder.</p>
+          </div>
+          <pre class="file" aria-label="Example sightline.json"><span class="file-name">sightline.json</span><code>{
+  "$schema": "https://sightline.revington.co/sightline.schema.json",
+  "solution": "Shop.sln",
+  "exclude": ["*.Tests", "samples"]
+}</code></pre>
+        </div>
       </div>
     </section>
 

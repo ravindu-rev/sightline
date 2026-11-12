@@ -12,27 +12,84 @@ The map redraws while you edit. Code can be changed in the page itself or in you
 
 **[Try the live demo at sightline.revington.co](https://sightline.revington.co/)**. It runs in the browser; nothing to install.
 
-## Install
+## Get started
 
-Requires the .NET 10 SDK or newer.
+Needs the .NET 10 SDK or newer. The package is `Co.Revington.Sightline`; the command is `sightline`.
+
+**Try it** without installing anything. In a folder with a `.sln`:
+
+```sh
+dnx Co.Revington.Sightline
+```
+
+**Set it up for your solution**, so the whole team has it. In the folder with your `.sln`, usually the root of the repository:
+
+```sh
+dnx Co.Revington.Sightline init
+```
+
+`init` does three things, and running it again changes nothing that is already set up:
+
+1. pins Sightline in the repository's tool manifest, `dotnet-tools.json`, creating it if needed
+2. writes [`sightline.json`](#settings), which names the solution to open
+3. adds a "Sightline: open the map" task to `.vscode/tasks.json`, when the folder uses VS Code. A `tasks.json` with comments is left as it is, and `init` prints the task to paste in.
+
+Commit the files it lists. From then on, anyone who clones the repository runs:
+
+```sh
+dotnet tool restore
+dotnet sightline
+```
+
+`dotnet sightline` works from any folder in the repository. Projects that were never restored are restored first, as `dotnet build` does.
+
+**Install it just for yourself**:
 
 ```sh
 dotnet tool install --global Co.Revington.Sightline
-```
-
-The package is `Co.Revington.Sightline`; the command it installs is `sightline`.
-
-## Use
-
-Run `dotnet restore` on your solution first so references resolve, then:
-
-```sh
 sightline path\to\Your.sln
 ```
 
-The browser opens at `http://localhost:5210`. The path can be a `.sln`, `.slnx` or `.csproj` file, or a folder. Without a path, the current folder is used.
+## Use
 
-Options: `--port <n>`, `--no-open`, `--help`.
+```sh
+sightline [path] [options]
+sightline init [folder] [options]
+```
+
+The path is a `.sln`, `.slnx` or `.csproj` file, or a folder. Without it, Sightline opens the solution named in the nearest `sightline.json`, or the one in the current folder. The map opens in the browser at `http://localhost:5210`.
+
+| Option | What it does |
+| --- | --- |
+| `--port <n>` | Port for the map page. The next free one is used if it is busy. |
+| `--no-open` | Do not open the browser. |
+| `--no-restore` | Do not run `dotnet restore` for projects that were never restored. |
+| `--version` | Show the version. |
+| `init --solution <file>` | The solution to open, when the folder has several. Without it, `init` asks. |
+| `init --vscode`, `init --no-vscode` | Add the VS Code task even without a `.vscode` folder, or never. |
+| `init --no-tool` | Do not pin Sightline in the tool manifest. |
+
+## Settings
+
+`sightline.json` holds the settings for a repository. Sightline uses the nearest one in the current folder or a folder above it, and options on the command line win over it.
+
+```json
+{
+  "$schema": "https://sightline.revington.co/sightline.schema.json",
+  "solution": "Shop.sln",
+  "exclude": ["*.Tests", "samples"]
+}
+```
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `solution` | the solution in the current folder | The `.sln`, `.slnx` or `.csproj` file to open, relative to `sightline.json`. |
+| `exclude` | none | Projects to leave off the map. Each entry is a project name, a folder or a path relative to `sightline.json`, and may use `*` within a folder name and `**` across folders: `"*.Tests"`, `"samples"`, `"tools/**"`. Left-out projects still load when others reference them, so the code that uses them is read correctly. |
+| `port` | `5210` | Port for the map page. |
+| `openBrowser` | `true` | Open the map in the browser at start. |
+| `restore` | `true` | Run `dotnet restore` first for projects that were never restored. |
+
+The `$schema` line lets editors suggest these settings as you type. Comments and trailing commas are allowed. A misspelled setting is reported and ignored; a wrong value stops Sightline with a message saying what is expected.
 
 ## The three views
 

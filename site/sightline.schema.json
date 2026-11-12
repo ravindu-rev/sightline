@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sightline.revington.co/sightline.schema.json",
+  "title": "Sightline settings",
+  "description": "Settings for Sightline in this repository. Sightline uses the nearest sightline.json in the current folder or a folder above it. Options given on the command line win over this file.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Where editors find the description of these settings."
+    },
+    "solution": {
+      "type": "string",
+      "description": "The .sln, .slnx or .csproj file to open, relative to this file. Without it, Sightline opens the solution in the current folder.",
+      "examples": ["App.sln", "src/App.slnx"]
+    },
+    "exclude": {
+      "type": "array",
+      "description": "Projects to leave off the map. Each entry is a project name, a folder or a path relative to this file, and may use * (within a folder name) and ** (across folders). Left-out projects still load when others reference them, so code that uses them is read correctly.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "examples": ["*.Tests", "samples", "tools/**"]
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 5210,
+      "description": "Port for the map page. When it is busy, the next free port is used."
+    },
+    "openBrowser": {
+      "type": "boolean",
+      "default": true,
+      "description": "Open the map in the browser at start."
+    },
+    "restore": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run \"dotnet restore\" first for projects that were never restored, as \"dotnet build\" does."
+    }
+  },
+  "additionalProperties": false
+}

@@ -59,7 +59,8 @@ function buildLandingPage(version) {
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(out, { recursive: true });
 
-  for (const name of ['site.css', 'site.js']) fs.copyFileSync(path.join(site, name), path.join(out, name));
+  // sightline.schema.json: editors fetch it to suggest the settings in sightline.json.
+  for (const name of ['site.css', 'site.js', 'sightline.schema.json']) fs.copyFileSync(path.join(site, name), path.join(out, name));
   fs.cpSync(path.join(site, 'fonts'), path.join(out, 'fonts'), { recursive: true });
   fs.copyFileSync(path.join(root, 'assets', 'icon.png'), path.join(out, 'icon.png'));
 

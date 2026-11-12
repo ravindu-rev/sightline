@@ -55,7 +55,7 @@ a { color: inherit; text-decoration-thickness: 1.5px; text-underline-offset: 3px
 a:hover { color: var(--signal); }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
 
-code, kbd { font-family: var(--code); font-size: .9em; }
+code, kbd { font-family: var(--code); font-size: .9em; font-variant-ligatures: none; }
 code { padding: .1em .35em; border-radius: 4px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
 kbd { padding: .05em .4em; border: 1.5px solid var(--ink-3); border-bottom-width: 3px; border-radius: 5px; }
 
@@ -187,6 +187,7 @@ h1 { font-weight: 700; font-size: clamp(2.7rem, 5.6vw, 4.5rem); line-height: .98
 
 /* two columns of prose */
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem 4rem; align-items: start; }
+.two > * { min-width: 0; }
 .two p, .two li { color: var(--ink-2); max-width: 58ch; }
 .two ul { margin: 1rem 0 0; padding-left: 1.2rem; }
 .two li + li { margin-top: .45rem; }
@@ -205,6 +206,12 @@ h1 { font-weight: 700; font-size: clamp(2.7rem, 5.6vw, 4.5rem); line-height: .98
 }
 .route li:nth-child(1) { --stop: var(--z0); } .route li:nth-child(2) { --stop: var(--z1); } .route li:nth-child(3) { --stop: var(--z3); }
 .route p { color: var(--ink-2); }
+
+/* settings example under the team setup, drawn as a file with its name on a tab */
+.settings { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); margin-top: clamp(2.5rem, 5vw, 3.5rem); padding-top: 2.2rem; border-top: 1px solid var(--rule); align-items: center; }
+.file { position: relative; margin: 0; padding: 2.7rem 1.2rem 1.2rem; overflow-x: auto; border: 1.5px solid var(--ink); border-radius: 12px; background: var(--paper); }
+.file-name { position: absolute; left: 0; top: 0; padding: .3rem .9rem; border-radius: 10px 0 10px 0; background: var(--ink); color: var(--paper); font: 600 .95rem var(--sign); }
+.file code { padding: 0; background: none; font-size: .9rem; line-height: 1.65; white-space: pre; }
 
 /* ------------------------------------------------------------------ footer */
 
