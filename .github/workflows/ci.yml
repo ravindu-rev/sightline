@@ -46,8 +46,8 @@ jobs:
         working-directory: vscode
         run: npx --yes @vscode/vsce@3 package --no-dependencies --out ../artifacts/sightline.vsix
 
-  # What the pull request does to the map of Sightline itself, as a comment, made by the tool built
-  # from the pull request. The same comment is what the Sightline GitHub Action posts for other repositories.
+  # What the pull request does to the map of Sightline itself, as a comment. It uses the Sightline
+  # GitHub Action, the way other repositories do, but runs the tool built from the pull request.
   map:
     runs-on: ubuntu-latest
     permissions:
@@ -55,31 +55,15 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
-      - name: Compare the maps
-        run: |
-          dotnet build src/Co.Revington.Sightline -c Release
-          dotnet run --project src/Co.Revington.Sightline -c Release --no-build -- \
-            diff Co.Revington.Sightline.sln --base "${{ github.event.pull_request.base.sha }}" --format markdown --out "$RUNNER_TEMP/map.md"
-          cat "$RUNNER_TEMP/map.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the tool
+        run: dotnet build src/Co.Revington.Sightline -c Release
 
-      # Pull requests from forks get a read-only token; the summary above still shows the result.
-      - name: Comment on the pull request
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- sightline-map-diff -->")) | .id' | tail -n 1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$RUNNER_TEMP/map.md" > /dev/null
-          else
-            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/map.md"
-          fi
+      - uses: ravindu-rev/sightline-action@v1
+        with:
+          solution: Co.Revington.Sightline.sln
+          command: dotnet run --project src/Co.Revington.Sightline -c Release --no-build --
