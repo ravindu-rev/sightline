@@ -16,7 +16,12 @@ internal sealed class ProjectFacts
     public required string Kind { get; init; }        // web | worker | exe | test | lib
     public string? Tfm { get; init; }
     public required ProjectId RoslynId { get; init; }
+
+    /// Every project the compiler sees, also those reached through other projects.
     public List<string> ProjectRefs { get; init; } = [];
+
+    /// The ProjectReference items written in the project file itself.
+    public List<string> WrittenRefs { get; init; } = [];
     public List<PackageRef> Packages { get; init; } = [];
 }
 
@@ -56,10 +61,23 @@ internal static class ProjectReader
             .Distinct()
             .ToList();
 
+        // Include="..\Shop.Domain\Shop.Domain.csproj"; paths built from MSBuild properties are left to the compiler's list.
+        var written = (xml?.Descendants() ?? [])
+            .Where(e => e.Name.LocalName == "ProjectReference")
+            .Select(e => e.Attribute("Include")?.Value)
+            .OfType<string>()
+            .Where(include => !include.Contains("$(", StringComparison.Ordinal))
+            .Select(include => System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, include.Replace('\\', System.IO.Path.DirectorySeparatorChar))))
+            .Select(full => nodeIdByPath.GetValueOrDefault(full))
+            .OfType<string>()
+            .Where(id => id != nodeId && refs.Contains(id))
+            .Distinct()
+            .ToList();
+
         return new ProjectFacts
         {
             Id = nodeId, Name = name, AssemblyName = project.AssemblyName, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
-            RoslynId = project.Id, ProjectRefs = refs, Packages = packages,
+            RoslynId = project.Id, ProjectRefs = refs, WrittenRefs = written, Packages = packages,
         };
     }
 

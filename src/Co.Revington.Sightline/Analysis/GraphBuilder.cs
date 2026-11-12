@@ -91,9 +91,11 @@ internal static class GraphBuilder
     }
 
     /// The compiler sees every project a project depends on, also through other projects. The map shows
-    /// the references that are not implied by others: A uses C directly only if no B on the way leads to C.
+    /// the references written in the project file, and of the rest (added by imported .props files, say)
+    /// those that no other reference implies.
     static Dictionary<string, List<string>> DirectReferences(IReadOnlyList<ProjectFacts> projects)
     {
+        var written = projects.ToDictionary(p => p.Id, p => p.WrittenRefs, StringComparer.Ordinal);
         var refs = projects.ToDictionary(p => p.Id, p => p.ProjectRefs.Distinct().ToHashSet(), StringComparer.Ordinal);
         var reach = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
@@ -113,7 +115,10 @@ internal static class GraphBuilder
 
         var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var (id, mine) in refs)
-            result[id] = mine.Where(c => !mine.Any(b => b != c && Reach(b, []).Contains(c))).Order(StringComparer.Ordinal).ToList();
+            result[id] = mine
+                .Where(c => written[id].Contains(c) || !mine.Any(b => b != c && Reach(b, []).Contains(c)))
+                .Order(StringComparer.Ordinal)
+                .ToList();
         return result;
     }
 
