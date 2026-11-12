@@ -38,6 +38,7 @@
     <AssemblyMetadata Include="Sightline.Tool" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/sightline/Co.Revington.Sightline.dll'))" />
     <AssemblyMetadata Include="Sightline.Project" Value="$(MSBuildProjectDirectory)" />
     <AssemblyMetadata Include="Sightline.OpenBrowser" Value="$(SightlineOpenBrowser)" />
+    <AssemblyMetadata Include="Sightline.Web" Value="true" Condition="'$(UsingMicrosoftNETSdkWeb)' == 'true'" />
   </ItemGroup>
 
 </Project>

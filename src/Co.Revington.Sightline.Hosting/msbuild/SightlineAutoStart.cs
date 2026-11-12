@@ -31,11 +31,11 @@ namespace Co.Revington.Sightline.Hosting
             try
             {
                 string tool, project;
-                bool openBrowser;
-                if (!ShouldStart(out tool, out project, out openBrowser)) return;
+                bool openBrowser, web;
+                if (!ShouldStart(out tool, out project, out openBrowser, out web)) return;
 
                 Active = true;
-                var thread = new global::System.Threading.Thread(() => Run(tool, project, openBrowser));
+                var thread = new global::System.Threading.Thread(() => Run(tool, project, openBrowser, web));
                 thread.IsBackground = true;
                 thread.Name = "Sightline";
                 thread.Start();
@@ -46,11 +46,12 @@ namespace Co.Revington.Sightline.Hosting
             }
         }
 
-        static bool ShouldStart(out string tool, out string project, out bool openBrowser)
+        static bool ShouldStart(out string tool, out string project, out bool openBrowser, out bool web)
         {
             tool = "";
             project = "";
             openBrowser = false;
+            web = false;
             var assembly = typeof(SightlineAutoStart).Assembly;
 
             // Only when this app itself runs: not inside a test host, "dotnet ef" or another tool that loads it.
@@ -70,6 +71,7 @@ namespace Co.Revington.Sightline.Hosting
                     case "Sightline.Tool": tool = metadata.Value ?? ""; break;
                     case "Sightline.Project": project = metadata.Value ?? ""; break;
                     case "Sightline.OpenBrowser": openBrowser = string.Equals(metadata.Value, "true", global::System.StringComparison.OrdinalIgnoreCase); break;
+                    case "Sightline.Web": web = string.Equals(metadata.Value, "true", global::System.StringComparison.OrdinalIgnoreCase); break;
                 }
             }
 
@@ -81,7 +83,7 @@ namespace Co.Revington.Sightline.Hosting
         /// "--attach" makes it join a map that is already open for the solution, and close shortly
         /// after this app stops.
         /// </summary>
-        static void Run(string tool, string project, bool openBrowser)
+        static void Run(string tool, string project, bool openBrowser, bool web)
         {
             try
             {
@@ -126,6 +128,12 @@ namespace Co.Revington.Sightline.Hosting
                     {
                         if (!line.StartsWith(UrlPrefix, global::System.StringComparison.Ordinal)) continue;
                         Url = line.Substring(UrlPrefix.Length).Trim();
+
+                        // A web app sets up /sightline while it starts. Sightline can be quicker, so give the
+                        // app a moment, so the announcement can mention it. Outside Development it never comes.
+                        for (var waited = 0; web && AppPath == null && waited < 50; waited++)
+                            global::System.Threading.Thread.Sleep(100);
+
                         var also = AppPath == null ? "" : " (or open " + AppPath + " on this app)";
                         Say("the live map of this solution is at " + Url + also);
                     }
