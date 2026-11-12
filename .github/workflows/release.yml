@@ -1,7 +1,7 @@
 name: Release
 
-# Every push to master is built and tested. If code under src/ changed, it is also released:
-# a new version number, a NuGet package, a git tag and a GitHub release with notes.
+# Every push to master is built and tested. If code under src/ or vscode/ changed, it is also released:
+# a new version number, the NuGet packages, the VS Code extension, a git tag and a GitHub release with notes.
 #
 # Two names here must match the trusted publishing policy on nuget.org:
 # this file's name, "release.yml", and the environment of the publish job, "production".
@@ -9,7 +9,7 @@ name: Release
 on:
   push:
     branches: [master]
-  workflow_dispatch:      # "Run workflow" on GitHub: release even if src/ did not change
+  workflow_dispatch:      # "Run workflow" on GitHub: release even if src/ and vscode/ did not change
 
 # One release at a time. A newer push waits for the running one, so two pushes never get the same version.
 concurrency:

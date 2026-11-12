@@ -16,5 +16,5 @@ Sightline runs on your machine and serves its page on localhost only. Things wor
 
 - read or change source files through the map's server, which needs a token that only the page and the app it runs beside receive;
 - make the map's server send a request anywhere but an app on the same machine ("Try it");
-- start a program through "Open in editor", or through a repository's `sightline.json`;
+- start a program through "Open in editor", through a repository's `sightline.json`, or through a repository's `.vscode/settings.json` with the VS Code extension;
 - learn local paths or source code from an exported map or a `sightline diff` comment when the source was left out.

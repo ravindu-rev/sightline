@@ -10,14 +10,14 @@ The extension uses a map that is already open for the folder, whether you starte
 
 ## Needs
 
-The .NET 10 SDK.
+The .NET 10 SDK, and a folder you trust: reading a solution runs MSBuild and restores packages, which runs code from the repository, so the extension stays off in Restricted Mode.
 
 ## Settings
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `sightline.openIn` | `browser` | Open the map in the browser, or in a VS Code tab (`editor`). |
-| `sightline.command` | empty | How to start Sightline, for example `sightline` for a global install. |
+| `sightline.command` | empty | How to start Sightline, for example `sightline` for a global install. User settings only: a repository's `.vscode/settings.json` cannot set it. |
 | `sightline.problems` | `true` | Show Sightline's problems in the Problems panel. |
 
 More about Sightline at [sightline.revington.co](https://sightline.revington.co).
