@@ -13,18 +13,25 @@
 # A push is released only when something under src/ changed since the last tag.
 # Starting the workflow by hand releases regardless.
 #
-# Inputs (environment): NUGET_USER, MANUAL. Outputs: version, release, and release-notes.md.
+# The release notes group commits by type. ci, test, chore, docs, build and style commits
+# are left out, because they do not change what users get.
+#
+# Inputs (environment): NUGET_USER, MANUAL, NOTES_ONLY (write the notes, report nothing).
+# Outputs: version and release in GITHUB_OUTPUT, and release-notes.md.
 
 set -euo pipefail
 
-project="src/Sightline/Sightline.csproj"
+project="src/Co.Revington.Sightline/Co.Revington.Sightline.csproj"
+package="Co.Revington.Sightline"
 notes="release-notes.md"
 output="${GITHUB_OUTPUT:-/dev/stdout}"
 repo_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-ravindu-rev/sightline}"
 
-breaking='^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:'
-feature='^feat(\([^)]*\))?:'
-fix='^fix(\([^)]*\))?:'
+scope='(\([^)]*\))?'
+breaking_subject="^[a-z]+$scope!:"
+feature="^feat$scope:"
+fix="^fix$scope:"
+hidden="^(ci|test|chore|docs|build|style)$scope:"
 
 base=$(sed -n 's:.*<VersionPrefix>\([0-9][0-9.]*\)</VersionPrefix>.*:\1:p' "$project" | head -n 1)
 last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
@@ -43,7 +50,7 @@ else
   IFS=. read -r major minor patch <<< "${last#v}"
   messages=$(git log "$range" --format='%s%n%b')
 
-  if grep -Eq "$breaking" <<< "$messages"; then bump=major
+  if grep -Eq "$breaking_subject|^BREAKING CHANGE:" <<< "$messages"; then bump=major
   elif grep -Eq "$feature" <<< "$messages"; then bump=minor
   else bump=patch
   fi
@@ -74,12 +81,22 @@ fi
 
 # ---------------------------------------------------------------- release notes
 
-commits=$(git log "$range" --no-merges --format='%s (%h)')
+# One line per commit: "subject (abc1234)". A "BREAKING CHANGE:" line in the body marks the
+# subject with "!", so the commit is listed under breaking changes.
+commits=$(git log "$range" --no-merges --format='%h' | while read -r sha; do
+  subject=$(git log -1 --format='%s' "$sha")
+  if git log -1 --format='%b' "$sha" | grep -q '^BREAKING CHANGE:'; then
+    subject=$(sed -E 's/^([a-z]+(\([^)]*\))?):/\1!:/' <<< "$subject")
+  fi
+  echo "$subject ($sha)"
+done)
 
+listed=false
 section() {   # $1 = heading, $2 = pattern of commit subjects that belong under it
   local lines
   lines=$(grep -E "$2" <<< "$commits" || true)
   if [ -z "$lines" ]; then return 0; fi
+  listed=true
   echo "### $1"
   echo
   # Drop the "feat(scope): " prefix; the heading already says what kind of change it is.
@@ -88,29 +105,42 @@ section() {   # $1 = heading, $2 = pattern of commit subjects that belong under 
 }
 
 {
-  section "Breaking changes" '^[a-z]+(\([^)]*\))?!:'
-  section "New" "$feature"
-  section "Fixed" "$fix"
-
-  other=$(grep -Ev "$feature|$fix|^[a-z]+(\([^)]*\))?!:" <<< "$commits" || true)
-  if [ -n "$other" ]; then
-    echo "### Other changes"
+  if [ -z "$last" ]; then
+    # Before the first release there is nothing to fix or change, so only features are listed.
+    echo "First release of Sightline."
     echo
-    sed -E 's/^/- /' <<< "$other"
-    echo
+    section "New" "$feature"
+  else
+    section "Breaking changes" "$breaking_subject"
+    section "New" "$feature"
+    section "Fixed" "$fix"
+    other=$(grep -Ev "$breaking_subject|$feature|$fix|$hidden" <<< "$commits" || true)
+    if [ -n "$other" ]; then
+      listed=true
+      echo "### Other changes"
+      echo
+      sed -E 's/^[a-z]+(\([^)]*\))?: *//; s/^/- /' <<< "$other"
+      echo
+    fi
+    if [ "$listed" = false ]; then
+      echo "Maintenance release with no user-facing changes."
+      echo
+    fi
   fi
 
   echo "### Install or update"
   echo
-  echo '```'
-  echo "dotnet tool install --global Sightline --version $next"
-  echo "dotnet tool update --global Sightline"
+  echo '```sh'
+  echo "dotnet tool install --global $package --version $next"
+  echo "dotnet tool update --global $package"
   echo '```'
   if [ -n "$last" ]; then
     echo
     echo "All changes: $repo_url/compare/$last...v$next"
   fi
 } > "$notes"
+
+if [ "${NOTES_ONLY:-false}" = true ]; then exit 0; fi
 
 # ---------------------------------------------------------------- report
 
@@ -120,14 +150,14 @@ section() {   # $1 = heading, $2 = pattern of commit subjects that belong under 
 } >> "$output"
 
 if [ "$release" = true ]; then
-  echo "::notice title=Release::Publishing Sightline $next (previous: ${last:-none})"
+  echo "::notice title=Release::Publishing $package $next (previous: ${last:-none})"
 else
   echo "::notice title=No release::$reason"
 fi
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
-    if [ "$release" = true ]; then echo "## Releasing Sightline $next"; else echo "## No release"; echo; echo "$reason"; fi
+    if [ "$release" = true ]; then echo "## Releasing $package $next"; else echo "## No release"; echo; echo "$reason"; fi
     echo
     cat "$notes"
   } >> "$GITHUB_STEP_SUMMARY"

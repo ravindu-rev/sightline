@@ -1,15 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Sightline.Analysis;
-using Sightline.Live;
+using Co.Revington.Sightline.Analysis;
+using Co.Revington.Sightline.Live;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 
-namespace Sightline.Server;
+namespace Co.Revington.Sightline.Server;
 
 /// Local web server: serves the UI, the graph, live events and source files.
 internal static class WebApp

@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Operations;
 
-namespace Sightline.Analysis;
+namespace Co.Revington.Sightline.Analysis;
 
 /// Reads one C# file and lists what it declares, calls, registers and maps.
 internal static partial class Extractor

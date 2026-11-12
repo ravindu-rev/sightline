@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace Sightline.Live;
+namespace Co.Revington.Sightline.Live;
 
 /// Fans out server-sent events to every connected browser tab.
 internal sealed class EventHub

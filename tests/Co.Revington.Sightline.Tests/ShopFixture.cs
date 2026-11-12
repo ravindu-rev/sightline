@@ -3,10 +3,10 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
-using Sightline.Live;
-using Sightline.Server;
+using Co.Revington.Sightline.Live;
+using Co.Revington.Sightline.Server;
 
-namespace Sightline.Tests;
+namespace Co.Revington.Sightline.Tests;
 
 /// Loads the bundled Shop sample once and serves it on a local port,
 /// so the tests run the real analysis and the real HTTP API.
@@ -47,7 +47,7 @@ public sealed class ShopFixture : IAsyncLifetime
             throw new InvalidOperationException("The sample solution failed to load: " + session.Status.Message);
 
         var port = FreePort();
-        _app = WebApp.Build(session, hub, port, Token, Path.Combine(RepoRoot, "src", "Sightline", "wwwroot"));
+        _app = WebApp.Build(session, hub, port, Token, Path.Combine(RepoRoot, "src", "Co.Revington.Sightline", "wwwroot"));
         await _app.StartAsync();
 
         var address = new Uri($"http://127.0.0.1:{port}");
@@ -84,8 +84,8 @@ public sealed class ShopFixture : IAsyncLifetime
     static string FindRepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Sightline.sln"))) return dir.FullName;
-        throw new InvalidOperationException("Could not find Sightline.sln above " + AppContext.BaseDirectory);
+            if (File.Exists(Path.Combine(dir.FullName, "Co.Revington.Sightline.sln"))) return dir.FullName;
+        throw new InvalidOperationException("Could not find Co.Revington.Sightline.sln above " + AppContext.BaseDirectory);
     }
 
     /// The analysis needs the sample's NuGet references, which only exist after a restore.

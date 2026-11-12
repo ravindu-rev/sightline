@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 
-namespace Sightline.Analysis;
+namespace Co.Revington.Sightline.Analysis;
 
 internal sealed record PackageRef(string Name, string Version, bool Direct);
 

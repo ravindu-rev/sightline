@@ -7,4 +7,4 @@
 *.png binary
 
 # Bundled libraries: keep them out of GitHub's language statistics and diffs.
-src/Sightline/wwwroot/lib/** linguist-vendored
+src/Co.Revington.Sightline/wwwroot/lib/** linguist-vendored

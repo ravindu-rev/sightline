@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
-using Sightline;
-using Sightline.Live;
-using Sightline.Server;
+using Co.Revington.Sightline;
+using Co.Revington.Sightline.Live;
+using Co.Revington.Sightline.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 

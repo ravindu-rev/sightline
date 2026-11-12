@@ -4,12 +4,12 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using Sightline.Analysis;
+using Co.Revington.Sightline.Analysis;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Sightline.Live;
+namespace Co.Revington.Sightline.Live;
 
 internal abstract record Work;
 internal sealed record ReloadWork : Work;

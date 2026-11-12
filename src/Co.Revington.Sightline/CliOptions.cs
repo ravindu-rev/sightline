@@ -1,4 +1,4 @@
-namespace Sightline;
+namespace Co.Revington.Sightline;
 
 internal sealed record CliOptions(string Target, int Port, bool Open, string UiDir, string? Token)
 {

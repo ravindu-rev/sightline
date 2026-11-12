@@ -1,4 +1,4 @@
-namespace Sightline.Analysis;
+namespace Co.Revington.Sightline.Analysis;
 
 // Raw findings from one source file. The graph is assembled from these.
 

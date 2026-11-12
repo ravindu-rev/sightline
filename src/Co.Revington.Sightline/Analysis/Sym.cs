@@ -1,6 +1,6 @@
 using Microsoft.CodeAnalysis;
 
-namespace Sightline.Analysis;
+namespace Co.Revington.Sightline.Analysis;
 
 internal static class Sym
 {

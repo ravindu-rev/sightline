@@ -1,4 +1,4 @@
-namespace Sightline.Live;
+namespace Co.Revington.Sightline.Live;
 
 /// Watches source folders and reports changed paths in small batches.
 internal sealed class FileWatcher : IDisposable

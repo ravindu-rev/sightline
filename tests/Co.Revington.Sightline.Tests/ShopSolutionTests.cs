@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 
-namespace Sightline.Tests;
+namespace Co.Revington.Sightline.Tests;
 
 /// End-to-end checks against the bundled Shop sample: what the analysis finds,
 /// what the HTTP API allows, and that live edits reach the graph.

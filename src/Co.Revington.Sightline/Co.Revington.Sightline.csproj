@@ -7,15 +7,17 @@
     <RollForward>Major</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>Sightline</RootNamespace>
+    <RootNamespace>Co.Revington.Sightline</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
-  <!-- NuGet package: a .NET tool, installed with "dotnet tool install -g Sightline". -->
+  <!-- NuGet package: a .NET tool, installed with "dotnet tool install -g Co.Revington.Sightline".
+       The command people type stays "sightline". -->
   <PropertyGroup>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>sightline</ToolCommandName>
-    <PackageId>Sightline</PackageId>
+    <PackageId>Co.Revington.Sightline</PackageId>
+    <Title>Sightline</Title>
     <!-- Local builds use this version. Releases get theirs from .github/scripts/plan-release.sh.
          Raise this number to force a bigger jump, for example to 1.0.0. -->
     <VersionPrefix>0.1.0</VersionPrefix>
@@ -50,7 +52,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Sightline.Tests" />
+    <InternalsVisibleTo Include="Co.Revington.Sightline.Tests" />
   </ItemGroup>
 
 </Project>

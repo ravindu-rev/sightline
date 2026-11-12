@@ -1,4 +1,4 @@
-namespace Sightline.Analysis;
+namespace Co.Revington.Sightline.Analysis;
 
 /// Turns per-file facts into one graph: nodes, edges and the DI service list.
 internal static class GraphBuilder

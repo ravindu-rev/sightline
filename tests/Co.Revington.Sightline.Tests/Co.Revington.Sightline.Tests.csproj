@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Sightline\Sightline.csproj" />
+    <ProjectReference Include="..\..\src\Co.Revington.Sightline\Co.Revington.Sightline.csproj" />
   </ItemGroup>
 
   <ItemGroup>
