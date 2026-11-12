@@ -304,7 +304,7 @@ internal static class WebApp
         ctx.Response.ContentType = "text/event-stream";
         ctx.Response.Headers.CacheControl = "no-cache";
         var ct = ctx.RequestAborted;
-        var channel = hub.Subscribe();
+        var channel = hub.Subscribe(page: ctx.Request.Query["client"].FirstOrDefault() != "editor");
 
         try
         {
