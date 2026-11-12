@@ -130,6 +130,14 @@ section() {   # $1 = heading, $2 = pattern of commit subjects that belong under 
 
   echo "### Install or update"
   echo
+  echo "For a solution: run this in its folder. It sets the solution up, or moves one that is set up to this version."
+  echo
+  echo '```sh'
+  echo "dnx $package@$next init"
+  echo '```'
+  echo
+  echo "Just for yourself:"
+  echo
   echo '```sh'
   echo "dotnet tool install --global $package --version $next"
   echo "dotnet tool update --global $package"
