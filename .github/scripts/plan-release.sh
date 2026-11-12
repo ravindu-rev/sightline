@@ -8,7 +8,7 @@
 #   feat: ...                                  -> minor
 #   anything else                              -> patch
 #
-# A higher <VersionPrefix> in the project file wins. Set it to 1.0.0 to go stable.
+# A higher <VersionPrefix> in src/Directory.Build.props wins. Set it to 1.0.0 to go stable.
 #
 # A push is released only when something under src/ changed since the last tag.
 # Starting the workflow by hand releases regardless.
@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-project="src/Co.Revington.Sightline/Co.Revington.Sightline.csproj"
+project="src/Directory.Build.props"       # holds <VersionPrefix> for both packages
 package="Co.Revington.Sightline"
 notes="release-notes.md"
 output="${GITHUB_OUTPUT:-/dev/stdout}"
@@ -134,6 +134,12 @@ section() {   # $1 = heading, $2 = pattern of commit subjects that belong under 
   echo
   echo '```sh'
   echo "dnx $package@$next init"
+  echo '```'
+  echo
+  echo "Inside the app you run, so the map opens beside it in every Debug run:"
+  echo
+  echo '```sh'
+  echo "dotnet add package $package.Hosting --version $next"
   echo '```'
   echo
   echo "Just for yourself:"

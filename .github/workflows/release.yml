@@ -75,11 +75,13 @@ jobs:
           NOTES_ONLY: true
         run: bash .github/scripts/plan-release.sh
 
+      # Two packages, one version: the tool, and the same tool as a package for a project.
       - name: Pack
-        run: >
-          dotnet pack src/Co.Revington.Sightline/Co.Revington.Sightline.csproj -c Release -o artifacts
-          -p:Version=${{ needs.test.outputs.version }}
-          -p:ContinuousIntegrationBuild=true
+        env:
+          VERSION: ${{ needs.test.outputs.version }}
+        run: |
+          dotnet pack src/Co.Revington.Sightline/Co.Revington.Sightline.csproj -c Release -o artifacts -p:Version=$VERSION -p:ContinuousIntegrationBuild=true
+          dotnet pack src/Co.Revington.Sightline.Hosting/Co.Revington.Sightline.Hosting.csproj -c Release -o artifacts -p:Version=$VERSION -p:ContinuousIntegrationBuild=true
 
       - name: Sign in to nuget.org
         id: nuget

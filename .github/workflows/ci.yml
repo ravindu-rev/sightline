@@ -31,6 +31,8 @@ jobs:
           dotnet build Co.Revington.Sightline.sln -c Release --no-restore
           dotnet test Co.Revington.Sightline.sln -c Release --no-build
 
-      # Proves the NuGet package still builds; nothing is published from a pull request.
+      # Proves both NuGet packages still build; nothing is published from a pull request.
       - name: Pack
-        run: dotnet pack src/Co.Revington.Sightline/Co.Revington.Sightline.csproj -c Release -o artifacts
+        run: |
+          dotnet pack src/Co.Revington.Sightline/Co.Revington.Sightline.csproj -c Release -o artifacts
+          dotnet pack src/Co.Revington.Sightline.Hosting/Co.Revington.Sightline.Hosting.csproj -c Release -o artifacts
