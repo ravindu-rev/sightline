@@ -220,6 +220,7 @@
           <div>
             <h3>Settings live in the repository</h3>
             <p><code>sightline.json</code> names the solution to open and the projects to leave off the map, such as tests or samples that would crowd it. Editors that read JSON schemas suggest the settings as you type.</p>
+            <p>Rather have it inside your app? Add <code>Co.Revington.Sightline.Hosting</code> to the project you run. Every Debug run then opens the map beside the app, and web apps answer <code>/sightline</code> with it. Release builds get nothing.</p>
             <p>Just for yourself? <code>dotnet tool install --global Co.Revington.Sightline</code>, then run <code>sightline</code> in any solution folder.</p>
           </div>
           <pre class="file" aria-label="Example sightline.json"><span class="file-name">sightline.json</span><code>{

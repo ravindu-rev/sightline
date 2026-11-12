@@ -43,6 +43,23 @@ dotnet sightline
 
 `dotnet sightline` works from any folder in the repository. Projects that were never restored are restored first, as `dotnet build` does.
 
+**Add it to the app you run**, so the map opens beside it every time you run a Debug build:
+
+```sh
+dotnet add package Co.Revington.Sightline.Hosting
+```
+
+```text
+Sightline: the live map of this solution is at http://localhost:5210 (or open /sightline on this app)
+```
+
+- Only Debug builds of apps get it. Release builds, test projects, CI runs and tools that load the app, such as `dotnet ef`, are left alone, and the package adds no assembly to the app.
+- Web apps also answer `/sightline` in the Development environment, with a redirect to the map.
+- The map stays open across restarts (`dotnet watch`, a new debug session) and closes 10 seconds after the app stops. Several apps of one solution share one map.
+- Turn it off with `<SightlineAutoStart>false</SightlineAutoStart>` in the project file, or `SIGHTLINE_AUTOSTART=0` for one run. `<SightlineOpenBrowser>true</SightlineOpenBrowser>` also opens the map in the browser.
+
+It is a separate package because NuGet does not let a .NET tool package be added to a project.
+
 **Install it just for yourself**:
 
 ```sh
@@ -57,7 +74,7 @@ sightline [path] [options]
 sightline init [folder] [options]
 ```
 
-The path is a `.sln`, `.slnx` or `.csproj` file, or a folder. Without it, Sightline opens the solution named in the nearest `sightline.json`, or the one in the current folder. The map opens in the browser at `http://localhost:5210`.
+The path is a `.sln`, `.slnx` or `.csproj` file, or a folder. Without it, Sightline opens the solution named in the nearest `sightline.json`, or the nearest solution in the current folder or above it, up to the top of the repository. The map opens in the browser at `http://localhost:5210`.
 
 | Option | What it does |
 | --- | --- |
@@ -148,7 +165,7 @@ Releases are automatic. Every push to `master` is built and tested by `.github/w
 | `feat:` | minor | 0.3.1 to 0.4.0 |
 | anything else | patch | 0.3.1 to 0.3.2 |
 
-To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Co.Revington.Sightline/Co.Revington.Sightline.csproj`. To release without a code change, start the workflow by hand from the Actions tab. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested by `.github/workflows/ci.yml` and never publish.
+Both packages, `Co.Revington.Sightline` and `Co.Revington.Sightline.Hosting`, are released together with the same version. To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Directory.Build.props`. To release without a code change, start the workflow by hand from the Actions tab. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested by `.github/workflows/ci.yml` and never publish.
 
 ### Publishing setup
 

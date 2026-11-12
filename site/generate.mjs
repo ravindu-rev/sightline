@@ -51,8 +51,8 @@ function latestVersion() {
   } catch {
     // no tags yet
   }
-  const csproj = fs.readFileSync(path.join(root, project, 'Co.Revington.Sightline.csproj'), 'utf8');
-  return /<VersionPrefix>([^<]+)</.exec(csproj)?.[1] ?? '0.0.0';
+  const props = fs.readFileSync(path.join(root, 'src', 'Directory.Build.props'), 'utf8');
+  return /<VersionPrefix>([^<]+)</.exec(props)?.[1] ?? '0.0.0';
 }
 
 function buildLandingPage(version) {
