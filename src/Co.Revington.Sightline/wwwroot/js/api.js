@@ -23,6 +23,9 @@ export const api = {
 
   reload: () => fetch('/api/reload', { method: 'POST', headers: auth }).then(check),
 
+  /** 204 while the server runs, 401 when it restarted with a new token, 0 when it does not answer. */
+  ping: () => fetch('/api/ping', { headers: auth, cache: 'no-store' }).then((r) => r.status, () => 0),
+
   /** Live updates. The browser reconnects by itself when the connection drops. */
   events(handlers) {
     const source = new EventSource('/api/events?token=' + encodeURIComponent(token));

@@ -19,22 +19,40 @@ return Cli.Parse(args) switch
 
 static async Task<int> OpenMapAsync(MapOptions options)
 {
+    // Started beside an app: when this solution already has a map open, join it instead of opening another.
+    if (options.AttachPid is int joining && await Instances.JoinAsync(options.Target, joining) is { } open)
+    {
+        Console.WriteLine($"sightline-url: {open}");
+        return 0;
+    }
+
     var port = FindFreePort(options.Port);
     var token = options.Token ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
     var hub = new EventHub();
     var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore));
-    var app = WebApp.Build(session, hub, port, token, options.UiDir);
+    var companions = new Companions(closeWithApps: options.AttachPid is not null, Companions.DefaultGrace);
+    var app = WebApp.Build(session, hub, port, token, options.UiDir, companions);
 
     await app.StartAsync();
+    Instances.Register(options.Target, port, token);
 
     var url = $"http://localhost:{port}";
+    if (options.AttachPid is int parent)
+    {
+        companions.Attach(parent);
+        Console.WriteLine($"sightline-url: {url}");       // read by the app that started this map
+    }
+
     Console.WriteLine($"Sightline {ToolInfo.Version}");
     Console.WriteLine($"  target  {options.Target}");
     if (options.Config is not null) Console.WriteLine($"  config  {options.Config.File}");
     Console.WriteLine($"  url     {url}");
-    if (options.Config is null) Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on the solution");
+    if (options.Config is null && options.AttachPid is null)
+        Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on the solution");
 
-    var loop = Task.Run(() => session.RunAsync(app.Lifetime.ApplicationStopping));
+    var stopping = app.Lifetime.ApplicationStopping;
+    var loop = Task.Run(() => session.RunAsync(stopping));
+    var watch = Task.Run(() => companions.WatchAsync(app.Lifetime.StopApplication, stopping));
 
     if (options.Open)
     {
@@ -43,7 +61,9 @@ static async Task<int> OpenMapAsync(MapOptions options)
     }
 
     await app.WaitForShutdownAsync();
+    Instances.Unregister(options.Target);
     await loop;
+    await watch;
     return 0;
 }
 

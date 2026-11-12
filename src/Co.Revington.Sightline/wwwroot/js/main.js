@@ -326,8 +326,9 @@ function load() {
   return loading;
 }
 
-api.events({
+const events = {
   hello(message) {
+    recovered();
     online = true;
     if (message.status) store.status = message.status;
     // After a reconnect the graph may have moved on; the first connect just rides on the initial load.
@@ -346,8 +347,32 @@ api.events({
   offline() {
     online = false;
     renderStatus();
+    recover();
   },
-});
+};
+let stream = api.events(events);
+
+// Sightline can restart while this tab stays open, for example beside an app that restarted.
+// The browser then gives up on the event stream, and this page's token no longer works.
+// Check every two seconds: reconnect when the server is back, or reload to pick up the new token.
+let recovering = null;
+
+function recover() {
+  if (recovering) return;
+  recovering = setInterval(async () => {
+    const answer = await api.ping();
+    if (answer === 401) {
+      location.reload();
+    } else if (answer === 204 && stream.readyState === EventSource.CLOSED) {
+      stream = api.events(events);
+    }
+  }, 2000);
+}
+
+function recovered() {
+  clearInterval(recovering);
+  recovering = null;
+}
 
 // -------------------------------------------------------------------- change feed
 

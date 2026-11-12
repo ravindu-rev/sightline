@@ -9,8 +9,10 @@ internal sealed record InitCommand(InitOptions Options) : CliCommand;
 internal sealed record ExitCommand(int Code) : CliCommand;
 
 /// What "sightline [path]" opens, and how. Command-line options win over sightline.json, which wins over defaults.
+/// AttachPid: the app this map runs beside (--attach), or null for a map opened by hand.
 internal sealed record MapOptions(
-    string Target, int Port, bool Open, bool Restore, string UiDir, string? Token, SightlineConfig? Config, ProjectFilter Filter);
+    string Target, int Port, bool Open, bool Restore, string UiDir, string? Token, SightlineConfig? Config, ProjectFilter Filter,
+    int? AttachPid = null);
 
 internal static class Cli
 {
@@ -24,7 +26,8 @@ internal static class Cli
           sightline init [folder]      Set a solution up for everyone who works on it
 
         The path is a .sln, .slnx or .csproj file, or a folder. Without it, Sightline opens
-        the solution named in the nearest sightline.json, or the one in the current folder.
+        the solution named in the nearest sightline.json, or the nearest solution in this
+        folder or above it.
 
         Options:
           --port <n>          Port for the map page (default 5210, or the next free one)
@@ -39,7 +42,10 @@ internal static class Cli
           --no-vscode         Do not add the VS Code task
           --no-tool           Do not pin Sightline in the tool manifest
 
-        For working on Sightline itself:
+        For tools:
+          --attach <pid>      Run beside process <pid>: join the map already open for this
+                              solution, and close 10 seconds after the last such process ends
+                              (used by the Co.Revington.Sightline.Hosting package)
           --ui <folder>       Serve the page from this folder
           --token <value>     Use this API token instead of a random one
 
@@ -52,7 +58,7 @@ internal static class Cli
     static CliCommand ParseMap(string[] args)
     {
         string? path = null, ui = null, token = null;
-        int? port = null;
+        int? port = null, attach = null;
         bool noOpen = false, noRestore = false;
 
         for (var i = 0; i < args.Length; i++)
@@ -85,6 +91,10 @@ internal static class Cli
                 case "--token":
                     token = Next();
                     if (token is null) return Fail("--token needs a value.");
+                    break;
+                case "--attach":
+                    if (!int.TryParse(Next(), out var pid) || pid <= 0) return Fail("--attach needs a process id.");
+                    attach = pid;
                     break;
                 default:
                     if (arg.StartsWith('-')) return Fail($"Unknown option {arg}.");
@@ -129,7 +139,8 @@ internal static class Cli
         }
         else
         {
-            target = ResolveTarget(Directory.GetCurrentDirectory());
+            var here = Directory.GetCurrentDirectory();
+            target = FindNearestSolution(here) ?? ResolveTarget(here);
             if (target is null)
                 return Fail("No .sln, .slnx or .csproj file found here. Give the path to a solution, " +
                             "or run \"sightline init\" in the folder that holds it.");
@@ -143,7 +154,27 @@ internal static class Cli
             UiDir: ui is null ? Path.Combine(AppContext.BaseDirectory, "wwwroot") : Path.GetFullPath(ui),
             Token: token,
             Config: config,
-            Filter: config is null ? ProjectFilter.None : new ProjectFilter(config.Dir, config.Exclude)));
+            Filter: config is null ? ProjectFilter.None : new ProjectFilter(config.Dir, config.Exclude),
+            AttachPid: attach));
+    }
+
+    /// The nearest solution in this folder or above it. The search stops at the top of the
+    /// repository, or after a few folders when there is none, so it never wanders into unrelated code.
+    internal static string? FindNearestSolution(string start)
+    {
+        var dir = new DirectoryInfo(start);
+        for (var level = 0; dir is not null && level < 6; level++, dir = dir.Parent)
+        {
+            var solution = Directory.EnumerateFiles(dir.FullName, "*.sln")
+                .Concat(Directory.EnumerateFiles(dir.FullName, "*.slnx"))
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (solution is not null) return solution;
+
+            var git = Path.Combine(dir.FullName, ".git");
+            if (Directory.Exists(git) || File.Exists(git)) return null;
+        }
+        return null;
     }
 
     static CliCommand ParseInit(string[] args)

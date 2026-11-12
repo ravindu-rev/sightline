@@ -355,8 +355,17 @@ internal sealed class LiveSession
         || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
 
     static bool IsUserDocument(Document d) =>
-        d.FilePath is { } path && d.SourceCodeKind == SourceCodeKind.Regular && !InBuildOutput(path)
+        d.FilePath is { } path && d.SourceCodeKind == SourceCodeKind.Regular && !InBuildOutput(path) && !FromPackage(path)
         && !path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
+
+    /// Source files that NuGet packages add to a project are not the project's own code.
+    /// That includes the starter that Co.Revington.Sightline.Hosting compiles into an app.
+    static bool FromPackage(string path)
+    {
+        var sep = Path.DirectorySeparatorChar;
+        return path.Contains($"{sep}.nuget{sep}packages{sep}", StringComparison.OrdinalIgnoreCase)
+            || path.Contains($"{sep}co.revington.sightline.hosting{sep}", StringComparison.OrdinalIgnoreCase);
+    }
 
     List<string> WatchRoots()
     {

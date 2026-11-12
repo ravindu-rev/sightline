@@ -1,0 +1,43 @@
+<Project>
+
+  <!--
+    Co.Revington.Sightline.Hosting
+
+    When this project runs from a Debug build, Sightline starts beside it and prints the address of
+    the live map of the solution. Web apps also answer /sightline with a redirect to the map.
+    Release builds, test projects and projects that are not apps get nothing from this package.
+
+    In the project file:
+      <SightlineAutoStart>false</SightlineAutoStart>      do not start Sightline
+      <SightlineOpenBrowser>true</SightlineOpenBrowser>   also open the map in the browser
+    For a single run, set the environment variable SIGHTLINE_AUTOSTART=0.
+  -->
+
+  <PropertyGroup>
+    <SightlineAutoStart Condition="'$(SightlineAutoStart)' == ''">true</SightlineAutoStart>
+    <SightlineOpenBrowser Condition="'$(SightlineOpenBrowser)' == ''">false</SightlineOpenBrowser>
+  </PropertyGroup>
+
+  <!-- A C# app for .NET 5 or newer, built as Debug, on a platform that can start processes. -->
+  <PropertyGroup Condition="'$(SightlineAutoStart)' == 'true'
+                            and '$(Configuration)' == 'Debug'
+                            and '$(MSBuildProjectExtension)' == '.csproj'
+                            and '$(IsTestProject)' != 'true'
+                            and ('$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe')
+                            and '$(TargetFrameworkIdentifier)' == '.NETCoreApp'
+                            and ('$(TargetPlatformIdentifier)' == '' or '$(TargetPlatformIdentifier)' == 'windows')
+                            and '$(UsingMicrosoftNETSdkBlazorWebAssembly)' != 'true'">
+    <_SightlineStarts Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(TargetFrameworkVersion.TrimStart(`vV`))', '5.0'))">true</_SightlineStarts>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_SightlineStarts)' == 'true'">
+    <Compile Include="$(MSBuildThisFileDirectory)SightlineAutoStart.cs" Visible="false" />
+    <Compile Include="$(MSBuildThisFileDirectory)SightlineHosting.cs" Visible="false" Condition="'$(UsingMicrosoftNETSdkWeb)' == 'true'" />
+
+    <!-- Read by SightlineAutoStart.cs when the app starts. -->
+    <AssemblyMetadata Include="Sightline.Tool" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/sightline/Co.Revington.Sightline.dll'))" />
+    <AssemblyMetadata Include="Sightline.Project" Value="$(MSBuildProjectDirectory)" />
+    <AssemblyMetadata Include="Sightline.OpenBrowser" Value="$(SightlineOpenBrowser)" />
+  </ItemGroup>
+
+</Project>

@@ -16,7 +16,9 @@ internal static class WebApp
 {
     sealed record SourceBody(string File, string Text);
 
-    public static WebApplication Build(LiveSession session, EventHub hub, int port, string token, string uiDir)
+    sealed record AttachBody(int Pid);
+
+    public static WebApplication Build(LiveSession session, EventHub hub, int port, string token, string uiDir, Companions? companions = null)
     {
         // Content root is the tool folder, so the analyzed app's appsettings.json is never picked up.
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
@@ -83,6 +85,13 @@ internal static class WebApp
 
         app.MapGet("/api/graph", ctx => Json(ctx, session.Snapshot.ToJson(session.StatusJson)));
 
+        // Cheap check for the page: 204 while this server runs, 401 when the page's token is from an earlier run.
+        app.MapGet("/api/ping", ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+            return Task.CompletedTask;
+        });
+
         app.MapGet("/api/events", ctx => StreamEvents(ctx, session, hub));
 
         app.MapGet("/api/source", async ctx =>
@@ -137,6 +146,14 @@ internal static class WebApp
             session.Enqueue(new ReloadWork());
             ctx.Response.StatusCode = StatusCodes.Status204NoContent;
             return Task.CompletedTask;
+        });
+
+        // Another app joins this map: keep it open while that app runs. See Companions.
+        app.MapPost("/api/attach", async ctx =>
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<AttachBody>();
+            var joined = companions is not null && body is not null && companions.Attach(body.Pid);
+            ctx.Response.StatusCode = joined ? StatusCodes.Status204NoContent : StatusCodes.Status400BadRequest;
         });
 
         return app;

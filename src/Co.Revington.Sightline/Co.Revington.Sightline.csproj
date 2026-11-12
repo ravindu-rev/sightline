@@ -12,26 +12,15 @@
   </PropertyGroup>
 
   <!-- NuGet package: a .NET tool, installed with "dotnet tool install -g Co.Revington.Sightline".
-       The command people type stays "sightline". -->
+       The command people type stays "sightline". Version and shared details: ..\Directory.Build.props. -->
   <PropertyGroup>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>sightline</ToolCommandName>
     <PackageId>Co.Revington.Sightline</PackageId>
     <Title>Sightline</Title>
-    <!-- Local builds use this version. Releases get theirs from .github/scripts/plan-release.sh.
-         Raise this number to force a bigger jump, for example to 1.0.0. -->
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <Authors>Ravindu Wijegunawardhana</Authors>
-    <Copyright>Copyright (c) 2026 Ravindu Wijegunawardhana</Copyright>
     <Description>A live, editable map of a .NET solution. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
     <PackageTags>dotnet-tool;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;visualization</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>icon.png</PackageIcon>
-    <PackageProjectUrl>https://github.com/ravindu-rev/sightline</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/ravindu-rev/sightline</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>https://github.com/ravindu-rev/sightline/releases</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -47,8 +36,6 @@
 
     <!-- Shown on nuget.org -->
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
-    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" Visible="false" />
-    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

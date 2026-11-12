@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Packs Co.Revington.Sightline.Hosting: Sightline as a package for a project.
+
+    It has no code of its own. It holds build files that start Sightline when the project runs from
+    a Debug build (msbuild/ here, build/ in the package, where NuGet expects them), and a copy of the
+    Sightline tool (tools/sightline/). A .NET tool package cannot be added to a project (NuGet error
+    NU1212), which is why this second package exists. Version and shared details: ..\Directory.Build.props.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- NU5100: the tool's assemblies sit outside lib/ on purpose. NU5128: there is no lib/ on purpose. -->
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);AddSightlineTool</TargetsForTfmSpecificContentInPackage>
+
+    <PackageId>Co.Revington.Sightline.Hosting</PackageId>
+    <Title>Sightline for a project</Title>
+    <Description>Add it to the app you run, and Sightline, a live and editable map of your .NET solution, starts beside it whenever you run a Debug build. Web apps also answer /sightline with the map. Nothing is added to Release builds.</Description>
+    <PackageTags>sightline;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;developer-tools</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="msbuild\**" Pack="true" PackagePath="build\" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Builds the tool first. AddSightlineTool copies its published files into the package. -->
+    <ProjectReference Include="..\Co.Revington.Sightline\Co.Revington.Sightline.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <Target Name="AddSightlineTool">
+    <PropertyGroup>
+      <_SightlineToolDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)sightline-tool\</_SightlineToolDir>
+    </PropertyGroup>
+
+    <RemoveDir Directories="$(_SightlineToolDir)" />
+    <MSBuild Projects="..\Co.Revington.Sightline\Co.Revington.Sightline.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(_SightlineToolDir);Version=$(Version);ContinuousIntegrationBuild=$(ContinuousIntegrationBuild)" />
+
+    <ItemGroup>
+      <_SightlineToolFile Include="$(_SightlineToolDir)**\*" />
+      <TfmSpecificPackageFile Include="@(_SightlineToolFile)" PackagePath="tools\sightline\%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

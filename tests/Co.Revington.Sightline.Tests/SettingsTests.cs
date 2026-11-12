@@ -11,10 +11,24 @@ public sealed class SettingsTests : IDisposable
 
     string Write(string relative, string text)
     {
-        var path = Path.Combine(_dir, relative);
+        var path = Path.GetFullPath(Path.Combine(_dir, relative));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, text);
         return path;
+    }
+
+    [Fact]
+    public void Without_settings_opens_the_nearest_solution_above_but_not_past_the_repository()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "repo", ".git"));
+        Write("Outside.sln", "");
+        var solution = Write("repo/Shop.sln", "");
+        var project = Directory.CreateDirectory(Path.Combine(_dir, "repo", "src", "Shop.Api")).FullName;
+
+        Assert.Equal(solution, Cli.FindNearestSolution(project));
+
+        File.Delete(solution);
+        Assert.Null(Cli.FindNearestSolution(project));     // Outside.sln is beyond the top of the repository
     }
 
     [Fact]
