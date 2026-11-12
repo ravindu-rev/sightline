@@ -273,7 +273,11 @@ async function onPatch(change) {
   if (change.structural) {
     sidebar.render();
     await renderView();
-    view.pulse([...change.touched].map((id) => model.rep(id)).filter(Boolean));
+    const touched = [...change.touched].map((id) => model.rep(id)).filter(Boolean);
+    view.pulse(touched);
+    // A flow or focus view is small enough to show whole, so a new step never appears off screen.
+    // The map is left alone: zooming out there would lose the place the reader was looking at.
+    if (state.view !== 'map') view.showAll(touched);
     pushFeed(change);
     if (!$('#find-results').hidden) runFind();
   }

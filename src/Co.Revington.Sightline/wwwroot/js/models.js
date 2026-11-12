@@ -362,7 +362,8 @@ export function flowModel(store, st) {
 
   return {
     key: `flow:${root.id}:${st.dir}`,
-    direction: 'RIGHT',
+    direction: 'AUTO',                 // left to right, or top to bottom when that keeps the text larger
+    layerGap: 48,
     nodes: finished,
     edges: [...edges.values()],
     truncated,
@@ -433,7 +434,8 @@ export function focusModel(store, st) {
 
   return {
     key: 'focus:' + center.id,
-    direction: 'RIGHT',
+    direction: 'AUTO',                 // users before the type and what it uses after it, across or down
+    layerGap: 56,
     nodes: [...nodes.values()],
     edges,
     rep: (id) => {

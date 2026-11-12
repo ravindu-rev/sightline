@@ -60,6 +60,8 @@ export class GraphView {
     this.els = new Map();          // node id -> element
     this.edgeEls = new Map();      // edge id -> { path, parts: [] }
     this.pos = new Map();          // node id -> { x, y, w, h } from the last layout
+    this.choices = new Map();      // view key -> arrangement picked last time (for 'AUTO')
+    this.entered = [];
     this.model = { key: '', nodes: [], edges: [], links: [] };
     this.view = { x: 40, y: 70, k: 1 };
     this.bounds = { w: 0, h: 0 };
@@ -113,6 +115,7 @@ export class GraphView {
   /** Creates, updates and removes DOM elements so they match the model. */
   #reconcile(model) {
     const keep = new Set();
+    this.entered = [];                        // ids of nodes that are new in this render
 
     for (const n of model.nodes) {
       keep.add(n.id);
@@ -124,6 +127,7 @@ export class GraphView {
         el = null;
       }
       if (!el) {
+        this.entered.push(n.id);
         el = document.createElement('div');
         el.__group = isGroup;
         el.dataset.id = n.id;
@@ -178,16 +182,23 @@ export class GraphView {
     if (model.direction !== 'AUTO') return this.#arrange(model, sizes, model.direction ?? 'RIGHT', 1.8);
 
     const box = this.host.getBoundingClientRect();
+    // The shape of a group only matters when there are groups to pack.
+    const options = model.nodes.some((n) => n.group)
+      ? [['RIGHT', 0.7], ['RIGHT', 1.8], ['DOWN', 1.8], ['DOWN', 3.4]]
+      : [['RIGHT', 1.8], ['DOWN', 1.8]];
+    const previous = this.choices.get(model.key);
+
     let best = null;
-    for (const [direction, aspect] of [['RIGHT', 0.7], ['RIGHT', 1.8], ['DOWN', 1.8], ['DOWN', 3.4]]) {
+    for (const [direction, aspect] of options) {
       const layout = await this.#arrange(model, sizes, direction, aspect);
       const choice = direction + aspect;
-      const scale = Math.min((box.width - 56) / layout.width, (box.height - 120) / layout.height);
-      // Stay with the previous arrangement unless another is clearly better, so the map does not flip around.
-      const score = scale * (choice === this.lastChoice ? 1.15 : 1);
+      // Bigger than life size is no gain: arrangements that both fit count as equal, and the first one wins.
+      const scale = Math.min(1.1, (box.width - 56) / layout.width, (box.height - 120) / layout.height);
+      // Stay with this view's previous arrangement unless another is clearly better, so it does not flip around.
+      const score = scale * (choice === previous ? 1.15 : 1);
       if (!best || score > best.score) best = { layout, choice, score };
     }
-    this.lastChoice = best.choice;
+    this.choices.set(model.key, best.choice);
     return best.layout;
   }
 
@@ -248,9 +259,12 @@ export class GraphView {
       children.push({ id: '__grid', width: grid.w, height: grid.h });
     }
 
+    const layoutOptions = { ...LAYOUT, 'elk.direction': direction };
+    if (model.layerGap) layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'] = String(model.layerGap);
+
     const result = await elk.layout({
       id: 'root',
-      layoutOptions: { ...LAYOUT, 'elk.direction': direction },
+      layoutOptions,
       children,
       edges: model.edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
     });
@@ -466,6 +480,19 @@ export class GraphView {
     this.view.y = py - (py - this.view.y) * f;
     this.view.k = k;
     this.#applyView();
+  }
+
+  /** After a live update: if something that changed or just appeared is off screen, zoom to show everything. */
+  showAll(ids) {
+    const box = this.host.getBoundingClientRect();
+    const { x, y, k } = this.view;
+    const hidden = [...ids, ...this.entered].some((id) => {
+      const p = this.pos.get(id);      // final position, not the one mid-animation
+      if (!p) return false;
+      const left = p.x * k + x, top = p.y * k + y;
+      return left < 0 || top < 56 || left + p.w * k > box.width || top + p.h * k > box.height - 44;
+    });
+    if (hidden) this.fit();
   }
 
   /** Scrolls a node into the middle of the canvas if it is off screen. */
