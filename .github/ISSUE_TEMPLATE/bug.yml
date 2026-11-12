@@ -1,0 +1,36 @@
+name: Something is wrong
+description: The map shows something wrong, misses something, or Sightline fails.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What the map showed or what failed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code that shows it
+      description: The smallest piece of code, or a link to a public repository, that shows the problem.
+      render: csharp
+  - type: input
+    id: version
+    attributes:
+      label: Sightline version
+      description: "`sightline --version`, or the version in the Feedback link."
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and .NET SDK
+      placeholder: "Windows 11, .NET SDK 10.0.100"
+  - type: textarea
+    id: log
+    attributes:
+      label: Output
+      description: Anything Sightline printed, or the browser console, if it helps.
+      render: text

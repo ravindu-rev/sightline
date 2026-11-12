@@ -10,8 +10,11 @@
   <meta property="og:title" content="Sightline, a live map of your .NET solution">
   <meta property="og:description" content="See projects, dependency injection, endpoints and request flows in one page that updates while you edit. Try the live demo in your browser.">
   <meta property="og:url" content="https://sightline.revington.co/">
-  <meta property="og:image" content="https://sightline.revington.co/icon.png">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://sightline.revington.co/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Sightline showing the flow of a request through a .NET solution">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="preload" href="fonts/barlow-semi-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -27,7 +30,8 @@
     </a>
     <nav aria-label="Sections">
       <a href="#demo">Demo</a>
-      <a href="#finds">What it finds</a>
+      <a href="#problems">Problems</a>
+      <a href="#app">Your running app</a>
       <a href="#start">Team setup</a>
       <a href="https://github.com/ravindu-rev/sightline">GitHub</a>
     </nav>
@@ -74,6 +78,7 @@
         <p class="fine frame-note">
           <span id="demo-status" role="status">Loading the demo.</span>
           <a href="demo/">Open it full screen</a>
+          <a href="explore/eshop/">See it on a real solution: dotnet/eShop, 28 projects</a>
         </p>
         <noscript><p class="fine">The demo needs JavaScript. The rest of this page does not.</p></noscript>
       </div>
@@ -94,6 +99,74 @@
           <article class="line l2">
             <h3>What breaks if I change this class?</h3>
             <p><strong>Focus.</strong> One type in the middle, between everything that uses it and everything it uses. That includes callers that only reach it through an interface.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="problems" class="problems" aria-labelledby="problems-title">
+      <div class="wrap two">
+        <div>
+          <h2 id="problems-title">It catches what only fails at run time</h2>
+          <p>Some mistakes compile fine and only show up when a request comes in, or only in production. Sightline checks for them as you type, and marks where they are on the map.</p>
+          <p>Layer rules live in <code>sightline.json</code>: list your layers from the top down, or say that the domain may not use Entity Framework, and a project that breaks the rule is reported.</p>
+          <p class="fine">The same checks run in CI with <code>sightline check</code>, appear in VS Code's Problems panel, and are listed on every pull request.</p>
+        </div>
+        <ul class="checks">
+          <li class="c-error"><b>A singleton holds on to a scoped service</b><span>One DbContext shared by every request, until ASP.NET Core refuses to start in Development.</span></li>
+          <li class="c-warn"><b>A service that is never registered</b><span>The class compiles; creating it fails with "Unable to resolve service".</span></li>
+          <li class="c-error"><b>Services that need each other</b><span>A circular dependency that dependency injection cannot create.</span></li>
+          <li class="c-error"><b>A layer that uses a higher one</b><span>Domain code that reaches into infrastructure, or a package it may not use.</span></li>
+          <li class="c-info"><b>A registration nothing asks for</b><span>Leftovers that can go.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="app" class="app" aria-labelledby="app-title">
+      <div class="wrap">
+        <h2 id="app-title">And what your app really does</h2>
+        <p class="intro">Add <code>Co.Revington.Sightline.Hosting</code> to the app you run. Every Debug run opens the map beside it, and the running app tells the map what reading the code cannot see.</p>
+        <div class="lines">
+          <article class="line l0">
+            <h3>Every request, with its SQL</h3>
+            <p>Each request the app handles shows up with its status, its time, the database commands it ran and the HTTP calls it made. Pick one, and the path it took lights up on the flow.</p>
+          </article>
+          <article class="line l1">
+            <h3>Try it, beside the code</h3>
+            <p>An endpoint's panel builds the request for you, with a sample body from its parameter types. Send it, read the answer, change the code, and have it sent again on every save.</p>
+          </article>
+          <article class="line l2">
+            <h3>The real registrations</h3>
+            <p>Services registered by scanning assemblies, and endpoints from FastEndpoints or Razor Pages, come from the running app, so the map and the checks see them too.</p>
+          </article>
+        </div>
+        <div class="command small app-command">
+          <code id="add-hosting">dotnet add package Co.Revington.Sightline.Hosting</code>
+          <button type="button" class="copy" data-copy="add-hosting">Copy</button>
+        </div>
+        <p class="fine">Release builds, tests and CI runs get nothing from it, and no assembly is added to your app.</p>
+      </div>
+    </section>
+
+    <section class="fits" aria-labelledby="fits-title">
+      <div class="wrap">
+        <h2 id="fits-title">Wherever you work</h2>
+        <div class="grid4">
+          <article>
+            <h3>VS Code</h3>
+            <p>The <a href="https://marketplace.visualstudio.com/items?itemName=revington.sightline">Sightline extension</a> shows the method under your cursor on the map, and puts Sightline's problems in the Problems panel.</p>
+          </article>
+          <article>
+            <h3>AI assistants</h3>
+            <p><code>sightline mcp</code> gives Copilot, Claude and other assistants the map over the Model Context Protocol: endpoints, flows, registrations and what a change affects, instead of guessing from file searches.</p>
+          </article>
+          <article>
+            <h3>Pull requests</h3>
+            <p>The <a href="https://github.com/ravindu-rev/sightline-action">GitHub Action</a> comments on each pull request with what it does to the map: new endpoints, changed request flows, registrations and new problems.</p>
+          </article>
+          <article>
+            <h3>Docs and onboarding</h3>
+            <p><code>sightline export</code> writes the map as a website you can host anywhere. Tours walk a new teammate through the solution, one view at a time.</p>
           </article>
         </div>
       </div>
@@ -184,7 +257,7 @@
         <div>
           <p>A strip at the bottom of the page reports what each edit changed. For example:</p>
           <p class="feed-line"><b>GetOrder.cs</b> <span class="plus">+</span> GetOrderHandler.Handle calls IOrderRepository.SaveAsync</p>
-          <p class="fine">On the sample solution an edit reaches the map in well under a tenth of a second. Larger solutions have not been measured yet.</p>
+          <p class="fine">On the sample solution an edit reaches the map in well under a tenth of a second. On jellyfin (41 projects, 2,300 types) it takes under one, and the solution loads in about 20 seconds.</p>
         </div>
       </div>
     </section>
@@ -238,15 +311,14 @@
           <h2>What it does not do yet</h2>
           <ul>
             <li>It reads C# in SDK-style projects only.</li>
-            <li>The analysis is static. Reflection, assembly scanning such as Scrutor, and generated code are not followed.</li>
-            <li>FastEndpoints, Carter and Razor Pages endpoints are not recognised.</li>
+            <li>Reading code cannot follow reflection, assembly scanning or generated code. The map lists where these happen, and with your app running, the app's own report fills the gaps for registrations and endpoints.</li>
+            <li>FastEndpoints, Carter and Razor Pages endpoints come from the running app, not from reading the code.</li>
             <li>Property reads and writes are not counted as calls.</li>
-            <li>It has been tested on small solutions. Speed on large ones has not been measured.</li>
           </ul>
         </div>
         <div>
           <h2>Your code stays on your machine</h2>
-          <p>Sightline runs locally and sends nothing anywhere. Its page is served on localhost only, every request needs a token created at start, and only files that belong to the loaded solution can be read or saved.</p>
+          <p>Sightline runs locally and sends nothing anywhere. Its page is served on localhost only, every request needs a token created at start, only files that belong to the loaded solution can be read or saved, and "Try it" only calls apps on your machine.</p>
           <p><a href="https://github.com/ravindu-rev/sightline">Read the source on GitHub</a></p>
         </div>
       </div>

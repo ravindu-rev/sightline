@@ -148,8 +148,24 @@ h1 { font-weight: 700; font-size: clamp(2.7rem, 5.6vw, 4.5rem); line-height: .98
 
 /* ------------------------------------------------------------------ sections */
 
-.views, .finds, .live, .start, .plain { padding-block: clamp(3rem, 7vw, 5.5rem); }
-.finds, .start { background: var(--panel); border-block: 1px solid var(--rule); }
+.views, .problems, .app, .fits, .finds, .live, .start, .plain { padding-block: clamp(3rem, 7vw, 5.5rem); }
+.problems, .fits, .start { background: var(--panel); border-block: 1px solid var(--rule); }
+
+/* problems it catches: a list with a coloured marker per severity */
+.checks { margin: 0; padding: 0; list-style: none; }
+.checks li { position: relative; padding: .85rem 0 .85rem 1.6rem; border-top: 1px solid var(--rule); }
+.checks li::before { content: ""; position: absolute; left: 0; top: 1.25rem; width: 11px; height: 11px; border-radius: 50%; background: var(--c); }
+.checks b { display: block; font: 600 1.15rem/1.35 var(--sign); color: var(--ink); }
+.checks span { color: var(--ink-2); }
+.c-error { --c: #cf3a3a; } .c-warn { --c: #b86e00; } .c-info { --c: var(--ink-3); }
+
+.app .app-command { max-width: 34rem; margin-top: 2.4rem; }
+
+/* where it fits: four short columns */
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2rem; margin-top: 2rem; }
+.grid4 article { min-width: 0; padding-top: 1rem; border-top: 3px solid var(--ink); }
+.grid4 h3 { margin-top: 0; }
+.grid4 p { color: var(--ink-2); }
 
 /* three views, drawn as three lines leaving their first station */
 .lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; margin-top: 2.6rem; }
@@ -224,10 +240,11 @@ h1 { font-weight: 700; font-size: clamp(2.7rem, 5.6vw, 4.5rem); line-height: .98
 
 @media (max-width: 1020px) {
   .hero-grid { grid-template-columns: 1fr; gap: 1.6rem; }
+  .grid4 { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 860px) {
-  .lines, .legend, .two { grid-template-columns: 1fr; }
+  .lines, .legend, .two, .grid4 { grid-template-columns: 1fr; }
   .lines { gap: 2.4rem; }
   .two { gap: 2.5rem; }
 
