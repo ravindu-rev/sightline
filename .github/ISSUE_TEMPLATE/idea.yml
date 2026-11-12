@@ -1,0 +1,16 @@
+name: An idea
+description: Something that would make Sightline more useful.
+labels: [idea]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would help
+      description: What you were trying to find out or do, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: An example
+      description: A solution, a framework or a piece of code where it matters.

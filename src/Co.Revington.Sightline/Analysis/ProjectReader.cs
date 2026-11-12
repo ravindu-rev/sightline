@@ -10,17 +10,26 @@ internal sealed class ProjectFacts
 {
     public required string Id { get; init; }          // graph node id: "proj:Name"
     public required string Name { get; init; }
+    public string AssemblyName { get; init; } = "";
     public required string Path { get; init; }
     public required string Dir { get; init; }
     public required string Kind { get; init; }        // web | worker | exe | test | lib
     public string? Tfm { get; init; }
     public required ProjectId RoslynId { get; init; }
+
+    /// Every project the compiler sees, also those reached through other projects.
     public List<string> ProjectRefs { get; init; } = [];
+
+    /// The ProjectReference items written in the project file itself.
+    public List<string> WrittenRefs { get; init; } = [];
+
+    /// Type names that the project's Razor files ask for with "@inject Type name", without namespace or generics.
+    public HashSet<string> RazorInjects { get; init; } = [];
     public List<PackageRef> Packages { get; init; } = [];
 }
 
 /// Project-level facts: kind, target framework, project and package references.
-internal static class ProjectReader
+internal static partial class ProjectReader
 {
     static readonly HashSet<string> TestPackages = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -55,12 +64,55 @@ internal static class ProjectReader
             .Distinct()
             .ToList();
 
+        // Include="..\Shop.Domain\Shop.Domain.csproj"; paths built from MSBuild properties are left to the compiler's list.
+        var written = (xml?.Descendants() ?? [])
+            .Where(e => e.Name.LocalName == "ProjectReference")
+            .Select(e => e.Attribute("Include")?.Value)
+            .OfType<string>()
+            .Where(include => !include.Contains("$(", StringComparison.Ordinal))
+            .Select(include => System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, include.Replace('\\', System.IO.Path.DirectorySeparatorChar))))
+            .Select(full => nodeIdByPath.GetValueOrDefault(full))
+            .OfType<string>()
+            .Where(id => id != nodeId && refs.Contains(id))
+            .Distinct()
+            .ToList();
+
         return new ProjectFacts
         {
-            Id = nodeId, Name = name, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
-            RoslynId = project.Id, ProjectRefs = refs, Packages = packages,
+            Id = nodeId, Name = name, AssemblyName = project.AssemblyName, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
+            RoslynId = project.Id, ProjectRefs = refs, WrittenRefs = written, Packages = packages,
+            RazorInjects = RazorInjectsIn(dir),
         };
     }
+
+    /// "@inject NavigationManager Nav" in .razor and .cshtml files: the services Razor asks for.
+    static HashSet<string> RazorInjectsIn(string dir)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            var files = Directory.EnumerateFiles(dir, "*.razor", SearchOption.AllDirectories)
+                .Concat(Directory.EnumerateFiles(dir, "*.cshtml", SearchOption.AllDirectories))
+                .Where(f => !f.Contains($"{System.IO.Path.DirectorySeparatorChar}bin{System.IO.Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                            && !f.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+            foreach (var file in files)
+            foreach (var line in File.ReadLines(file))
+            {
+                var m = Inject().Match(line);
+                if (!m.Success) continue;
+                var type = m.Groups[1].Value.Split('<')[0];
+                names.Add(type[(type.LastIndexOf('.') + 1)..]);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // what could be read is enough
+        }
+        return names;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*@inject\s+([\w.]+(?:<[^>]*>)?)\s+\w+\s*$")]
+    private static partial System.Text.RegularExpressions.Regex Inject();
 
     static XDocument? LoadXml(string path)
     {

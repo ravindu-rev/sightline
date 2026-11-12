@@ -41,7 +41,64 @@
       "type": "boolean",
       "default": true,
       "description": "Run \"dotnet restore\" first for projects that were never restored, as \"dotnet build\" does."
+    },
+    "layers": {
+      "type": "array",
+      "description": "The layers of the solution, from the top down. Each item is a project name pattern, or a list of patterns for projects that share a layer. A project may use its own layer and the layers below it; using a higher layer is reported as a problem.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+        ]
+      },
+      "examples": [["*.Api", "*.Infrastructure", "*.Application", "*.Domain"]]
+    },
+    "rules": {
+      "type": "array",
+      "description": "Projects that may not use certain projects or NuGet packages. Breaking a rule is reported as a problem.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "description": "Project name pattern, or a list of them, such as \"*.Domain\".",
+            "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+          },
+          "mayNotUse": {
+            "description": "Project or package name patterns that the projects in \"from\" may not use, such as \"Microsoft.EntityFrameworkCore*\".",
+            "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+          },
+          "because": {
+            "type": "string",
+            "description": "Why, shown with the problem."
+          }
+        },
+        "required": ["from", "mayNotUse"],
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "type": "object",
+      "description": "How serious each kind of problem is, or \"off\".",
+      "properties": {
+        "captive-dependency": { "$ref": "#/definitions/severity", "description": "A singleton receives a scoped service (default: error)." },
+        "missing-registration": { "$ref": "#/definitions/severity", "description": "A service is asked for but never registered (default: warning)." },
+        "dependency-cycle": { "$ref": "#/definitions/severity", "description": "Services need each other to be created (default: error)." },
+        "layer-violation": { "$ref": "#/definitions/severity", "description": "A project breaks \"layers\" or \"rules\" (default: error)." },
+        "unused-registration": { "$ref": "#/definitions/severity", "description": "A registration nothing asks for (default: info)." }
+      },
+      "additionalProperties": false
+    },
+    "editor": {
+      "type": "string",
+      "enum": ["vscode", "cursor", "rider", "visualstudio"],
+      "description": "The editor that \"Open in editor\" starts. A command of your own goes in the SIGHTLINE_EDITOR environment variable instead, such as \"subl {file}:{line}\"."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "severity": {
+      "type": "string",
+      "enum": ["error", "warning", "info", "off"]
+    }
+  }
 }

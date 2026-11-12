@@ -3,6 +3,7 @@
 
 import { esc, typeCode, verbChip, plural } from './ui.js';
 import { byName } from './store.js';
+import { badge } from './models.js';
 
 const TABS = [['endpoints', 'Endpoints'], ['services', 'Services'], ['types', 'Types'], ['projects', 'Projects']];
 const MAX_ROWS = 600;
@@ -57,7 +58,8 @@ export class Sidebar {
     const rows = this[`_${this.tab}`]();
     const shown = rows.slice(0, MAX_ROWS);
     let html = shown.join('');
-    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : EMPTY[this.tab]}</p>`;
+    const failed = this.store.status.state === 'error' && !this.store.projects.length;
+    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : failed ? 'The solution did not load; the message is on the map.' : EMPTY[this.tab]}</p>`;
     else if (rows.length > MAX_ROWS) html += `<p class="none">${rows.length - MAX_ROWS} more. Type in the filter to narrow the list.</p>`;
     this.listEl.innerHTML = html;
     this.setCurrent(this.current);
@@ -90,7 +92,8 @@ export class Sidebar {
     const items = this.store.endpoints().filter((ep) => this.#match(ep.name, ep.meta.style));
     return this.#grouped(items, (ep) =>
       `<button class="row" data-id="${esc(ep.id)}" title="${esc(ep.name)}">${verbChip(ep.meta.verb)}` +
-      `<span class="route grow">${esc(ep.meta.route)}</span>${ep.meta.auth ? '<span class="chip lock">auth</span>' : ''}</button>`);
+      `<span class="route grow">${esc(ep.meta.route)}</span>${ep.meta.auth ? '<span class="chip lock">auth</span>' : ''}` +
+      `${ep.meta.runtime === 'only' ? '<span class="chip run">runtime</span>' : ''}${badge(this.store, ep.id)}</button>`);
   }
 
   _services() {
@@ -110,7 +113,7 @@ export class Sidebar {
     const items = this.store.types().filter((t) => this.#match(t.name, t.ns)).sort(byName);
     return this.#grouped(items, (t) =>
       `<button class="row ${this.store.zoneClass(t.id)}" data-id="${esc(t.id)}" title="${esc((t.ns ? t.ns + '.' : '') + t.name)}">` +
-      `${typeCode(t.meta.typeKind)}<span class="grow">${esc(t.name)}</span><span class="dim">${esc(lastPart(t.ns))}</span></button>`);
+      `${typeCode(t.meta.typeKind)}<span class="grow">${esc(t.name)}</span><span class="dim">${esc(lastPart(t.ns))}</span>${badge(this.store, t.id)}</button>`);
   }
 
   _projects() {

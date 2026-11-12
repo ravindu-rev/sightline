@@ -28,7 +28,14 @@
       </div>
 
       <button class="tool warn" id="notes" hidden></button>
+      <button class="tool prob" id="problems" hidden title="Problems in the dependency injection setup and the layer rules"></button>
+      <button class="tool" id="requests" hidden title="Requests the running app handled"></button>
+      <button class="tool" id="tours" hidden title="Guided tours through this solution"></button>
       <div class="status" id="status" data-state="loading"><i></i><span>Starting</span></div>
+      <a class="made" id="made-with" href="https://sightline.revington.co" target="_blank" rel="noopener" hidden>Made with Sightline</a>
+      <a class="tool icon-only" id="feedback" target="_blank" rel="noopener" title="Report a problem or suggest something" aria-label="Feedback">
+        <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>
+      </a>
       <button class="tool" id="theme" title="Switch between light and dark" aria-label="Switch between light and dark">
         <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor"/></svg>
       </button>
@@ -67,9 +74,16 @@
           <span class="unsaved" id="ed-unsaved" hidden>Unsaved</span>
           <button class="tool" id="ed-discard" disabled title="Go back to the file on disk">Discard changes</button>
           <button class="tool" id="ed-save" disabled title="Write to disk (Ctrl+S)">Save file</button>
-          <a class="tool" id="ed-open" hidden title="Open this file in VS Code" aria-label="Open this file in VS Code">
-            <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h5v5M14 2 7.5 8.5M12 9.5V14H2V4h4.5"/></svg>
-          </a>
+          <span class="split" id="ed-open-group" hidden>
+            <button class="tool" id="ed-open" title="Open this file in your editor">
+              <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h5v5M14 2 7.5 8.5M12 9.5V14H2V4h4.5"/></svg>
+              <span id="ed-open-label">Open</span>
+            </button>
+            <button class="tool" id="ed-editor" title="Choose the editor" aria-label="Choose the editor" aria-haspopup="menu">
+              <svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+            </button>
+            <span class="menu" id="ed-editors" role="menu" hidden></span>
+          </span>
         </div>
         <div class="editor-body" id="ed-body">
           <div class="editor-empty" id="ed-empty">Select a class, method or endpoint to see and edit its code here.</div>

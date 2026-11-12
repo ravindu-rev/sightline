@@ -32,6 +32,7 @@
 
   <ItemGroup Condition="'$(_SightlineStarts)' == 'true'">
     <Compile Include="$(MSBuildThisFileDirectory)SightlineAutoStart.cs" Visible="false" />
+    <Compile Include="$(MSBuildThisFileDirectory)SightlineRuntime.cs" Visible="false" />
     <Compile Include="$(MSBuildThisFileDirectory)SightlineHosting.cs" Visible="false" Condition="'$(UsingMicrosoftNETSdkWeb)' == 'true'" />
 
     <!-- Read by SightlineAutoStart.cs when the app starts. -->

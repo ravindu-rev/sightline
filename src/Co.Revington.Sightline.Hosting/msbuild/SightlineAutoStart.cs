@@ -24,6 +24,7 @@ namespace Co.Revington.Sightline.Hosting
         internal static volatile string? AppPath;
 
         const string UrlPrefix = "sightline-url: ";
+        const string TokenPrefix = "sightline-token: ";
 
         [global::System.Runtime.CompilerServices.ModuleInitializer]
         internal static void Start()
@@ -35,6 +36,7 @@ namespace Co.Revington.Sightline.Hosting
                 if (!ShouldStart(out tool, out project, out openBrowser, out web)) return;
 
                 Active = true;
+                SightlineRuntime.Listen();      // before the app builds its host, so nothing is missed
                 var thread = new global::System.Threading.Thread(() => Run(tool, project, openBrowser, web));
                 thread.IsBackground = true;
                 thread.Name = "Sightline";
@@ -123,11 +125,13 @@ namespace Co.Revington.Sightline.Hosting
                     };
                     sightline.BeginErrorReadLine();
 
-                    string? line;
+                    string? line, token = null;
                     while ((line = sightline.StandardOutput.ReadLine()) != null)
                     {
+                        if (line.StartsWith(TokenPrefix, global::System.StringComparison.Ordinal)) token = line.Substring(TokenPrefix.Length).Trim();
                         if (!line.StartsWith(UrlPrefix, global::System.StringComparison.Ordinal)) continue;
                         Url = line.Substring(UrlPrefix.Length).Trim();
+                        if (token != null) SightlineRuntime.Connect(Url, token);
 
                         // A web app sets up /sightline while it starts. Sightline can be quicker, so give the
                         // app a moment, so the announcement can mention it. Outside Development it never comes.

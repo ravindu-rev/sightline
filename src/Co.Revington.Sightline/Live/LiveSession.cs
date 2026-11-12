@@ -19,17 +19,22 @@ internal sealed record FilesWork(IReadOnlyList<string> Paths) : Work;
 /// Editor text for a file. Text = null drops the unsaved buffer and goes back to disk.
 internal sealed record OverlayWork(string Path, string? Text, bool Saved = false) : Work;
 
+/// What the running apps reported about themselves; see RuntimeMerge.
+internal sealed record RuntimeWork(IReadOnlyList<RuntimeApp> Apps) : Work;
+
 internal sealed record StatusInfo(string State, string Message);
 
 /// Filter: projects to leave off the map. Restore: run "dotnet restore" for projects that were never restored.
-internal sealed record LoadOptions(ProjectFilter Filter, bool Restore)
+/// Checks: settings for the problems the map reports. Watch: follow file changes after loading (off for
+/// one-shot commands such as "sightline check"). Log: where progress goes (stdout by default).
+internal sealed record LoadOptions(ProjectFilter Filter, bool Restore, CheckOptions? Checks = null, bool Watch = true, TextWriter? Log = null)
 {
     public static readonly LoadOptions Default = new(ProjectFilter.None, Restore: true);
 }
 
 /// Owns the loaded solution and keeps the graph in step with edits.
 /// All changes run on one loop, so state never needs fine-grained locking.
-internal sealed class LiveSession
+internal sealed partial class LiveSession
 {
     static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", ".git", ".vs", ".idea", "node_modules" };
 
@@ -53,6 +58,7 @@ internal sealed class LiveSession
     readonly Dictionary<string, List<DocumentId>> _tracked = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, string> _overlays = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<ProjectId> _pendingSync = [];
+    IReadOnlyList<RuntimeApp> _runtime = [];
 
     volatile Snapshot _snapshot = Snapshot.Empty;
     volatile StatusInfo _status = new("loading", "Starting");
@@ -72,6 +78,19 @@ internal sealed class LiveSession
     public Snapshot Snapshot => _snapshot;
     public StatusInfo Status => _status;
     public string StatusJson => JsonSerializer.Serialize(_status, Snapshot.Json);
+
+    (int Version, string Status, string Json)? _graphJson;
+
+    /// The whole graph as the page fetches it. Built once per version: on a big solution it is tens of megabytes.
+    public string GraphJson()
+    {
+        var snapshot = _snapshot;
+        var status = StatusJson;
+        if (_graphJson is { } cached && cached.Version == snapshot.Version && cached.Status == status) return cached.Json;
+        var json = snapshot.ToJson(status);
+        _graphJson = (snapshot.Version, status, json);
+        return json;
+    }
 
     public void Enqueue(Work work) => _queue.Writer.TryWrite(work);
 
@@ -136,6 +155,10 @@ internal sealed class LiveSession
                             case ReloadWork: await LoadAsync(ct); break;
                             case FilesWork f: await ApplyFilesAsync(f.Paths, ct); break;
                             case OverlayWork o: await ApplyOverlayAsync(o, ct); break;
+                            case RuntimeWork r:
+                                _runtime = r.Apps;
+                                if (_solution is not null) Publish("runtime", [], Stopwatch.StartNew());
+                                break;
                         }
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -144,8 +167,9 @@ internal sealed class LiveSession
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"  error   {ex.Message}");
+                        // A failed load is shown as the status (which prints it); anything else is printed here.
                         if (work is ReloadWork) SetStatus("error", ex.Message);
+                        else Console.Error.WriteLine($"  error   {ex.Message}");
                     }
                 }
 
@@ -169,6 +193,7 @@ internal sealed class LiveSession
         while (_queue.Reader.TryPeek(out var next))
         {
             var skip = (work is ReloadWork && next is ReloadWork)
+                       || (work is RuntimeWork && next is RuntimeWork)
                        || (work is OverlayWork { Saved: false } a && next is OverlayWork b && SamePath(a.Path, b.Path));
             if (!skip) break;
             _queue.Reader.TryRead(out _);
@@ -181,7 +206,7 @@ internal sealed class LiveSession
 
     void SetStatus(string state, string message)
     {
-        if (_status.State != state) Console.WriteLine($"  {state,-7} {message}");
+        if (_status.State != state) (_options.Log ?? Console.Out).WriteLine($"  {state,-7} {message}");
         _status = new StatusInfo(state, message);
         _hub.Publish("status", StatusJson);
     }
@@ -200,6 +225,21 @@ internal sealed class LiveSession
         SetStatus("loading", "Opening " + Name);
 
         var ws = MSBuildWorkspace.Create();
+        var kept = false;
+        try
+        {
+            kept = await LoadIntoAsync(ws, sw, ct);
+        }
+        finally
+        {
+            // A load that failed or was cancelled must not leave its MSBuild build host running.
+            if (!kept) ws.Dispose();
+        }
+    }
+
+    /// Opens the solution in the workspace and builds the graph. True when the workspace is kept.
+    async Task<bool> LoadIntoAsync(MSBuildWorkspace ws, Stopwatch sw, CancellationToken ct)
+    {
         ws.SkipUnrecognizedProjects = true;
         var progress = new DirectProgress(p => SetStatus("loading", $"{p.Operation} {Path.GetFileName(p.FilePath)}"));
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -215,7 +255,7 @@ internal sealed class LiveSession
             }
             solution = ws.CurrentSolution;
         }
-        else if (_target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || _target.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+        else if (IsSolution(_target))
         {
             solution = await ws.OpenSolutionAsync(_target, progress, ct);
         }
@@ -269,7 +309,8 @@ internal sealed class LiveSession
             _solution = solution;
             _projects = projects;
             _projectNodeIds = projectNodeIds;
-            _diagnostics = _restoreProblems.Concat(ws.Diagnostics.Select(d => $"{d.Kind}: {d.Message}")).Distinct().Take(50).ToList();
+            var all = _restoreProblems.Concat(ws.Diagnostics.Select(Describe)).Distinct().ToList();
+            _diagnostics = all.Count <= 200 ? all : [.. all.Take(200), $"And {all.Count - 200} more."];
 
             _facts.Clear();
             _tracked.Clear();
@@ -287,7 +328,7 @@ internal sealed class LiveSession
             if (await SetTextAsync(path, SourceText.From(text, Encoding.UTF8), ct))
                 await ReextractAsync(TrackedIds(path), ct);
 
-        var graph = GraphBuilder.Build(_projects, _facts.Values);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
         _snapshot = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         _hub.Publish("reload", $"{{\"version\":{_snapshot.Version}}}");
 
@@ -295,7 +336,32 @@ internal sealed class LiveSession
         var left = excluded.Count == 0 ? "" : $", {excluded.Count} left out by {SightlineConfig.FileName}";
         SetStatus("ready", $"{count("project")} projects, {count("type")} types, {count("endpoint")} endpoints in {sw.Elapsed.TotalSeconds:0.0}s{left}");
 
-        _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
+        if (_options.Watch) _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
+        return true;
+    }
+
+    static bool IsSolution(string path) =>
+        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase);
+
+    /// MSBuild's messages, shorter: which project, and what is wrong. Package advisories are warnings, not failures.
+    static string Describe(WorkspaceDiagnostic d)
+    {
+        var m = MsbuildFailure().Match(d.Message);
+        var text = m.Success ? $"{Path.GetFileNameWithoutExtension(m.Groups["file"].Value)}: {m.Groups["message"].Value.Trim()}" : d.Message;
+        var advisory = text.Contains("known", StringComparison.OrdinalIgnoreCase) && text.Contains("vulnerability", StringComparison.OrdinalIgnoreCase);
+        return (d.Kind == WorkspaceDiagnosticKind.Failure && !advisory ? "Error: " : "Warning: ") + text;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^Msbuild failed when processing the file '(?<file>[^']+)' with message: (?<message>.+)$", System.Text.RegularExpressions.RegexOptions.Singleline)]
+    private static partial System.Text.RegularExpressions.Regex MsbuildFailure();
+
+    /// Loads the solution once, without following changes. For one-shot commands (check, export, diff).
+    public async Task<Snapshot> LoadOnceAsync(CancellationToken ct)
+    {
+        await LoadAsync(ct);
+        if (_status.State != "ready") throw new InvalidOperationException(_status.Message);
+        return _snapshot;
     }
 
     static ParallelOptions Parallelism(CancellationToken ct) => new()
@@ -330,9 +396,10 @@ internal sealed class LiveSession
     /// Like "dotnet build", restore the projects that never were, so a fresh clone just works.
     async Task RestoreMissingAsync(CancellationToken ct)
     {
-        var missing = FindProjects(RootDir)
-            .Where(p => !_options.Filter.Excludes(p) && !_restoreTried.Contains(p))
-            .Where(p => !File.Exists(Path.Combine(Path.GetDirectoryName(p)!, "obj", "project.assets.json")))
+        // Only the projects the solution lists: other project files in the folder (samples, fuzzers) are not loaded anyway.
+        var candidates = (Directory.Exists(_target) ? null : SolutionProjects(_target)) ?? [.. FindProjects(RootDir)];
+        var missing = candidates
+            .Where(p => !_options.Filter.Excludes(p) && !_restoreTried.Contains(p) && File.Exists(p) && !IsRestored(p))
             .ToList();
         if (missing.Count == 0) return;
 
@@ -340,15 +407,89 @@ internal sealed class LiveSession
         foreach (var p in missing) _restoreTried.Add(p);
         SetStatus("loading", $"Restoring NuGet packages for {missing.Count} project{(missing.Count == 1 ? "" : "s")}");
 
-        // A solution or a single project restores in one go; a folder of projects restores one by one.
-        IReadOnlyList<string> targets = Directory.Exists(_target) ? missing : [_target];
-        foreach (var target in targets)
+        // A solution or a single project restores in one go. When that fails, the projects still missing
+        // are restored one by one, so a single project that cannot be restored (it needs a workload or an
+        // SDK that is not installed) does not keep all the others from loading properly.
+        var together = !Directory.Exists(_target) && await RestoreAsync(_target, ct);
+        if (!together)
+            foreach (var project in missing.Where(p => !IsRestored(p)))
+                await RestoreAsync(project, ct);
+    }
+
+    /// True when restored. A failure is kept as a load warning.
+    async Task<bool> RestoreAsync(string target, CancellationToken ct)
+    {
+        // No lingering MSBuild worker processes after the restore.
+        var result = await DotnetCli.RunAsync(RootDir, ["restore", target, "-nodeReuse:false"], ct);
+        if (result.Code == 0) return true;
+        _restoreProblems.Add($"Warning: \"dotnet restore {Path.GetFileName(target)}\" failed, so some references may be missing. {DotnetCli.Tail(result.All, 2)}");
+        return false;
+    }
+
+    /// The restore output exists: obj/project.assets.json, or the same under artifacts/obj/<project>
+    /// for repositories that use MSBuild's artifacts output layout.
+    static bool IsRestored(string project)
+    {
+        var dir = Path.GetDirectoryName(project)!;
+        if (File.Exists(Path.Combine(dir, "obj", "project.assets.json"))) return true;
+
+        var name = Path.GetFileNameWithoutExtension(project);
+        for (var up = new DirectoryInfo(dir); up is not null; up = up.Parent)
         {
-            var result = await DotnetCli.RunAsync(RootDir, ["restore", target], ct);
-            if (result.Code != 0)
-                _restoreProblems.Add($"Warning: \"dotnet restore {Path.GetFileName(target)}\" failed, so some references may be missing. {DotnetCli.Tail(result.All, 2)}");
+            if (File.Exists(Path.Combine(up.FullName, "artifacts", "obj", name, "project.assets.json"))) return true;
+            if (Directory.Exists(Path.Combine(up.FullName, ".git"))) break;
+        }
+        return false;
+    }
+
+    /// The C# projects a .sln, .slnx or .slnf lists, or null when the file cannot be read.
+    internal static List<string>? SolutionProjects(string solution)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(solution))!;
+            IEnumerable<string> paths;
+            if (solution.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+            {
+                paths = System.Xml.Linq.XDocument.Load(solution).Descendants()
+                    .Where(e => e.Name.LocalName == "Project")
+                    .Select(e => e.Attribute("Path")?.Value)
+                    .OfType<string>();
+            }
+            else if (solution.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(solution), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                var inner = doc.RootElement.GetProperty("solution");
+                dir = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(dir, inner.GetProperty("path").GetString()!)))!;
+                paths = inner.GetProperty("projects").EnumerateArray().Select(p => p.GetString()).OfType<string>().ToList();
+            }
+            else if (solution.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                paths = File.ReadLines(solution)
+                    .Select(line => SlnProject().Match(line))
+                    .Where(m => m.Success)
+                    .Select(m => m.Groups[1].Value);
+            }
+            else
+            {
+                return [Path.GetFullPath(solution)];
+            }
+
+            return paths
+                .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                .Select(p => Path.GetFullPath(Path.Combine(dir, p.Replace('\\', Path.DirectorySeparatorChar))))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or System.Xml.XmlException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
         }
     }
+
+    /// Project("{...}") = "Name", "src\Name\Name.csproj", "{...}"
+    [System.Text.RegularExpressions.GeneratedRegex(@"^Project\(""[^""]*""\)\s*=\s*""[^""]*"",\s*""([^""]+)""")]
+    private static partial System.Text.RegularExpressions.Regex SlnProject();
 
     static bool InBuildOutput(string path) =>
         path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
@@ -381,6 +522,7 @@ internal sealed class LiveSession
         return new
         {
             name = Name,
+            version = ToolInfo.Version,
             path = _target,
             root = RootDir,
             counts = new
@@ -442,7 +584,7 @@ internal sealed class LiveSession
         if (files.Count > 0)
         {
             await ReextractAsync(touched, ct);
-            Publish("edit", files, sw);
+            Publish("disk", files, sw);
         }
         if (reload) _reloadTimer.Change(700, Timeout.Infinite);
     }
@@ -471,7 +613,7 @@ internal sealed class LiveSession
 
         if (!await SetTextAsync(o.Path, text, ct)) return;
         await ReextractAsync(TrackedIds(o.Path), ct);
-        Publish("edit", [o.Path], sw);
+        Publish(o.Saved ? "save" : "edit", [o.Path], sw);
     }
 
     List<DocumentId> TrackedIds(string path) => _tracked.TryGetValue(path, out var ids) ? [.. ids] : [];
@@ -571,7 +713,8 @@ internal sealed class LiveSession
         {
             await Parallel.ForEachAsync(ids, Parallelism(cts.Token), async (id, c) =>
             {
-                if (_queue.Reader.Count > 0) cts.Cancel();          // a new edit is waiting: handle it first
+                // A new edit is waiting: handle it first. (TryPeek, because this channel cannot count.)
+                if (_queue.Reader.TryPeek(out _)) cts.Cancel();
                 c.ThrowIfCancellationRequested();
                 if (solution.GetDocument(id) is { } doc)
                     results.Add((id, await Extractor.ExtractAsync(doc, _projectNodeIds[id.ProjectId], c)));
@@ -589,7 +732,7 @@ internal sealed class LiveSession
 
     void Publish(string reason, IReadOnlyList<string> files, Stopwatch sw)
     {
-        var graph = GraphBuilder.Build(_projects, _facts.Values);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
         var next = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         var relative = files.Select(f => Path.GetRelativePath(RootDir, f).Replace('\\', '/'));
         var patch = Snapshot.Diff(_snapshot, next, reason, relative, sw.ElapsedMilliseconds);

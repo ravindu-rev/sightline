@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.ravindu-rev/sightline",
+  "description": "A live map of a .NET solution for AI assistants: endpoints, request flows, dependency injection, problems, and what a change affects.",
+  "version": "{version}",
+  "packages": [
+    {
+      "registryType": "nuget",
+      "registryBaseUrl": "https://api.nuget.org",
+      "identifier": "Co.Revington.Sightline",
+      "version": "{version}",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": []
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/ravindu-rev/sightline",
+    "source": "github"
+  }
+}

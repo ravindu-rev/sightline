@@ -1,0 +1,35 @@
+{
+  "title": "How an order is placed",
+  "steps": [
+    {
+      "view": "map",
+      "id": "proj:Shop.Api",
+      "label": "Shop.Api",
+      "text": "The shop has four projects. Shop.Api is the web app. It uses Shop.Application, which holds the use cases and the interfaces they need; Shop.Infrastructure implements those interfaces with EF Core and an HTTP client. Shop.Domain is the model."
+    },
+    {
+      "view": "flow",
+      "id": "ep:Shop.Api:POST /api/orders",
+      "label": "POST /api/orders",
+      "text": "Placing an order starts here. The endpoint sends a PlaceOrder message, and its handler does the work: it reserves each product, charges the customer, and saves the order. Every interface call continues in the class registered for it."
+    },
+    {
+      "view": "focus",
+      "id": "Shop.Application::T:Shop.Application.Abstractions.IOrderRepository",
+      "label": "IOrderRepository",
+      "text": "Repositories are interfaces in Shop.Application and classes in Shop.Infrastructure. On the left: who uses the interface. On the right: the class dependency injection gives for it."
+    },
+    {
+      "view": "focus",
+      "id": "Shop.Infrastructure::T:Shop.Infrastructure.Payments.PaymentGatewayClient",
+      "label": "PaymentGatewayClient",
+      "text": "Payments go out over HTTP through a typed HttpClient, configured with PaymentOptions. If the gateway does not answer, the order stays pending."
+    },
+    {
+      "view": "focus",
+      "id": "Shop.Infrastructure::T:Shop.Infrastructure.Background.OutboxWorker",
+      "label": "OutboxWorker",
+      "text": "A background service checks pending orders every 30 seconds. It is a singleton, so it creates its own scope to get a DbContext, which is scoped. Injecting the DbContext directly would be a problem Sightline reports."
+    }
+  ]
+}

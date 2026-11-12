@@ -42,6 +42,8 @@ internal sealed class Graph
     public Dictionary<string, Node> Nodes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Edge> Edges { get; } = new(StringComparer.Ordinal);
     public List<ServiceEntry> Services { get; } = [];
+    public List<Problem> Problems { get; set; } = [];
+    public List<CoverageNote> Coverage { get; set; } = [];
 
     public bool Has(string id) => Nodes.ContainsKey(id);
 
@@ -74,7 +76,7 @@ internal sealed class Snapshot
 
     public static readonly Snapshot Empty = new()
     {
-        Version = 0, Nodes = [], Edges = [], ServicesJson = "[]", InfoJson = "{}",
+        Version = 0, Nodes = [], Edges = [], ServicesJson = "[]", InfoJson = "{}", ProblemsJson = "[]", CoverageJson = "[]",
     };
 
     public required int Version { get; init; }
@@ -82,6 +84,11 @@ internal sealed class Snapshot
     public required Dictionary<string, Item> Edges { get; init; }
     public required string ServicesJson { get; init; }
     public required string InfoJson { get; init; }
+    public required string ProblemsJson { get; init; }
+    public required string CoverageJson { get; init; }
+
+    /// The graph this snapshot was made from, for code that needs more than JSON (checks, export, MCP).
+    public Graph? Graph { get; init; }
 
     public static Snapshot From(Graph g, int version, object info)
     {
@@ -113,6 +120,9 @@ internal sealed class Snapshot
             Edges = edges,
             ServicesJson = JsonSerializer.Serialize(g.Services, Json),
             InfoJson = JsonSerializer.Serialize(info, Json),
+            ProblemsJson = JsonSerializer.Serialize(g.Problems, Json),
+            CoverageJson = JsonSerializer.Serialize(g.Coverage, Json),
+            Graph = g,
         };
     }
 
@@ -131,7 +141,9 @@ internal sealed class Snapshot
           .Append(",\"info\":").Append(InfoJson)
           .Append(",\"nodes\":[").AppendJoin(',', Nodes.Values.Select(i => i.Json))
           .Append("],\"edges\":[").AppendJoin(',', Edges.Values.Select(i => i.Json))
-          .Append("],\"services\":").Append(ServicesJson).Append('}');
+          .Append("],\"services\":").Append(ServicesJson)
+          .Append(",\"problems\":").Append(ProblemsJson)
+          .Append(",\"coverage\":").Append(CoverageJson).Append('}');
         return sb.ToString();
     }
 
@@ -156,6 +168,16 @@ internal sealed class Snapshot
         if (from.InfoJson != to.InfoJson)
         {
             sb.Append(",\"info\":").Append(to.InfoJson);
+            changed = true;
+        }
+        if (from.ProblemsJson != to.ProblemsJson)
+        {
+            sb.Append(",\"problems\":").Append(to.ProblemsJson);
+            changed = true;
+        }
+        if (from.CoverageJson != to.CoverageJson)
+        {
+            sb.Append(",\"coverage\":").Append(to.CoverageJson);
             changed = true;
         }
 

@@ -45,8 +45,37 @@ function follow(file, text) {
 }
 
 export const api = {
+  mode: 'demo',
+  readOnly: false,
+
   async graph() {
     return { ...structuredClone(data.graph), version };
+  },
+
+  /** The sample's files are in the Sightline repository on GitHub. */
+  webUrl(file, line) {
+    const path = String(file).split('/').map(encodeURIComponent).join('/');
+    return `https://github.com/ravindu-rev/sightline/blob/master/samples/${path}${line ? '#L' + line : ''}`;
+  },
+
+  async ping() {
+    return 204;
+  },
+
+  async tours() {
+    return data.tours ?? [];
+  },
+
+  async apps() {
+    return [];
+  },
+
+  async traces() {
+    return [];
+  },
+
+  async tryRequest() {
+    throw new Error('The demo has no running app to send requests to. Install Sightline to try your own endpoints.');
   },
 
   async source(file) {

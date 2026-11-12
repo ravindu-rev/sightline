@@ -407,6 +407,134 @@ g.el.step text { fill: var(--panel); font: 700 11px var(--font-sign); }
 .feed-log[hidden] { display: none; }
 .feed-log .row { gap: 10px; }
 
+/* ------------------------------------------------------------------ problems */
+
+/* dot in the corner of a station or list row with problems */
+.pb { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-left: auto; box-shadow: 0 0 0 2px var(--panel); }
+.n .pb { position: absolute; right: 4px; top: 4px; margin: 0; }
+.pb-error { background: var(--bad); }
+.pb-warning { background: var(--warn); }
+.pb-info { background: var(--ink-3); }
+
+.tool.prob[data-severity="error"] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--rule)); }
+.tool.prob[data-severity="warning"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--rule)); }
+.tool.prob[data-severity="none"] { color: var(--live); }
+
+.problem, .cover { margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--rule); border-left-width: 4px; border-radius: 6px; background: var(--panel); }
+.problem.pr-error { border-left-color: var(--bad); }
+.problem.pr-warning { border-left-color: var(--warn); }
+.problem.pr-info { border-left-color: var(--ink-3); }
+.cover { border-left-color: var(--rule); background: var(--panel-2); }
+.problem .ph, .cover .ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.problem .ph b, .cover .ph b { font: 700 13.5px var(--font-sign); }
+.problem .sev { font: 700 11px var(--font-sign); text-transform: uppercase; letter-spacing: .04em; }
+.problem.pr-error .sev { color: var(--bad); }
+.problem.pr-warning .sev { color: var(--warn); }
+.problem.pr-info .sev { color: var(--ink-3); }
+.problem .rule, .cover .rule { color: var(--ink-3); font-size: 11.5px; }
+.problem p { margin: 5px 0 7px; color: var(--ink-2); }
+.cover .chips { margin-top: 6px; }
+.where {
+  padding: 1px 7px; border-radius: 4px; font: 11.5px var(--font-code); color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+}
+.where:hover { text-decoration: underline; }
+.detail .ok { color: var(--live); margin: 12px 0 0; }
+
+/* ------------------------------------------------------------------ small parts */
+
+.chip.run { color: var(--live); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--live) 45%, transparent); background: transparent; }
+
+.split { position: relative; display: inline-flex; }
+.split > .tool:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split > .tool + .tool { margin-left: -1px; padding: 0 5px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.menu {
+  position: absolute; z-index: 40; right: 0; top: 32px; display: flex; flex-direction: column; min-width: 150px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / .18);
+}
+.menu button { padding: 5px 9px; border-radius: 5px; text-align: left; white-space: nowrap; }
+.menu button:hover { background: var(--panel-2); }
+
+a.tool { text-decoration: none; }
+.tool.icon-only { width: 28px; padding: 0; justify-content: center; }
+.made { color: var(--ink-2); font: 600 12.5px var(--font-sign); text-decoration: none; white-space: nowrap; }
+.made:hover { color: var(--ink); text-decoration: underline; }
+
+.toast {
+  position: fixed; z-index: 60; left: 50%; bottom: 44px; max-width: min(560px, 92vw); padding: 9px 14px;
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  background: var(--ink); color: var(--panel); border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / .25);
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+.tool.primary { color: var(--panel); background: var(--signal); border-color: var(--signal); }
+.tool.primary:hover { color: var(--panel); filter: brightness(1.08); }
+.tool.live-on { color: var(--live); border-color: color-mix(in srgb, var(--live) 45%, var(--rule)); }
+.dim { color: var(--ink-3); }
+.bad { color: var(--bad); }
+
+/* ------------------------------------------------------------------ the running app */
+
+/* steps a real request reached */
+.n.hit { border-color: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 30%, transparent); }
+.n.hit::before { background: var(--live); }
+.trace-chip { line-height: 26px; padding: 0 10px; font-size: 12px; }
+
+.st { flex: none; padding: 0 6px; border-radius: 4px; font: 700 11.5px/18px var(--font-sign); color: var(--panel); background: var(--ink-3); }
+.st-2 { background: var(--live); } .st-3 { background: var(--signal); } .st-4 { background: var(--warn); } .st-5, .st-0 { background: var(--bad); }
+
+.try { margin-top: 14px; padding: 10px 11px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel-2); }
+.try h4 { margin-top: 0; }
+.try-line { display: flex; gap: 6px; }
+.try select, .try input, .try textarea, .field input, .tour-step textarea {
+  height: 28px; padding: 0 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink);
+  font: 12px var(--font-code);
+}
+.try .method { flex: none; font-family: var(--font-sign); font-weight: 700; }
+.try .base { flex: 1; min-width: 0; }
+.try .target { display: block; width: 100%; margin-top: 6px; }
+.try textarea, .tour-step textarea { display: block; width: 100%; height: auto; padding: 6px 8px; margin-top: 6px; resize: vertical; line-height: 1.45; }
+.try-headers { margin-top: 6px; }
+.try-headers summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+.try-auto { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ink-2); font-size: 12px; }
+.try-auto input { height: auto; }
+.try-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.try-out { max-height: 260px; overflow: auto; margin: 8px 0 0; padding: 8px 9px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; font: 12px/1.5 var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.apps { display: grid; gap: 4px; }
+.app-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.app-row .dot.on { background: var(--live); }
+.rows .row time { flex: none; font-variant-numeric: tabular-nums; }
+.q { margin-top: 6px; }
+.q .qh { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.q .n, .tour-step .n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 9px; background: var(--ink); color: var(--panel); font: 700 11px var(--font-sign); }
+.q .sig { margin-top: 4px; white-space: pre-wrap; }
+
+/* ------------------------------------------------------------------ tours */
+
+.tour-row { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.tour-row .grow { display: flex; flex-direction: column; min-width: 0; }
+.tour-row b { font: 700 14px var(--font-sign); }
+.field { display: grid; gap: 4px; margin-top: 12px; color: var(--ink-2); font-size: 12px; }
+.field input { width: 100%; font-family: var(--font-ui); font-size: 13px; }
+.tour-step { margin-top: 10px; padding: 8px 9px; border: 1px solid var(--rule); border-radius: 6px; }
+.tour-step .ph { display: flex; align-items: center; gap: 8px; }
+.tour-step .grow { flex: 1; }
+.tour-step textarea { font-family: var(--font-ui); font-size: 13px; }
+.tour-card {
+  position: absolute; z-index: 8; left: 50%; bottom: 84px; transform: translateX(-50%); width: min(520px, calc(100% - 40px));
+  padding: 12px 14px; background: var(--panel); border: 1px solid var(--rule); border-left: 5px solid var(--signal);
+  border-radius: 10px; box-shadow: 0 16px 40px rgb(0 0 0 / .22);
+}
+.tour-card .tour-head { display: flex; align-items: center; gap: 10px; }
+.tour-card .tour-head b { flex: 1; font: 700 15px var(--font-sign); }
+.tour-card p { margin: 8px 0 4px; white-space: pre-wrap; }
+.tour-card .acts { justify-content: flex-end; margin: 8px 0 0; }
+
+/* an exported map cannot change code */
+[data-mode="export"] .editor-bar .unsaved, [data-mode="export"] #ed-save, [data-mode="export"] #ed-discard { display: none; }
+
 /* ------------------------------------------------------------------ small screens */
 
 @media (max-width: 980px) {

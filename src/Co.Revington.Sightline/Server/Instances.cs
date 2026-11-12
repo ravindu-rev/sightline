@@ -49,8 +49,8 @@ internal static class Instances
     }
 
     /// Asks the map that is open for this solution, if there is one, to stay open while process pid runs.
-    /// Returns that map's address, or null when no map for the solution is open.
-    public static async Task<string?> JoinAsync(string target, int pid)
+    /// Returns that map's address and token, or null when no map for the solution is open.
+    public static async Task<(string Url, string Token)?> JoinAsync(string target, int pid)
     {
         var file = FileFor(target);
         var instance = Read(file);
@@ -66,7 +66,7 @@ internal static class Instances
             request.Headers.Add("X-Sightline-Token", instance.Token);
 
             using var response = await http.SendAsync(request);
-            if (response.IsSuccessStatusCode) return $"http://localhost:{instance.Port}";
+            if (response.IsSuccessStatusCode) return ($"http://localhost:{instance.Port}", instance.Token);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {

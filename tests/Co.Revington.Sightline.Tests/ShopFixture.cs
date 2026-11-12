@@ -21,6 +21,9 @@ public sealed class ShopFixture : IAsyncLifetime
     public string RepoRoot { get; } = FindRepoRoot();
     public string SampleDir => Path.Combine(RepoRoot, "samples", "Shop");
 
+    /// The loaded solution, for tests that look at more than the HTTP API (MCP tools, export).
+    internal LiveSession Session { get; private set; } = null!;
+
     /// Sends the page token, like the UI does.
     public HttpClient Http { get; private set; } = null!;
 
@@ -34,6 +37,7 @@ public sealed class ShopFixture : IAsyncLifetime
 
         var hub = new EventHub();
         var session = new LiveSession(solution, hub);
+        Session = session;
         _loop = Task.Run(() => session.RunAsync(_stop.Token));
 
         var waited = Stopwatch.StartNew();

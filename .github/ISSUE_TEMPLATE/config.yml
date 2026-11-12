@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and show and tell
+    url: https://github.com/ravindu-rev/sightline/discussions
+    about: Ask how to do something, or share how you use Sightline.
+  - name: Security problem
+    url: https://github.com/ravindu-rev/sightline/security/advisories/new
+    about: Report it privately, not as an issue.

@@ -41,6 +41,7 @@ internal static class DotnetCli
         };
         foreach (var arg in args) info.ArgumentList.Add(arg);
         info.Environment["DOTNET_NOLOGO"] = "1";
+        info.Environment["MSBUILDDISABLENODEREUSE"] = "1";      // no MSBuild worker processes left behind
 
         Process process;
         try

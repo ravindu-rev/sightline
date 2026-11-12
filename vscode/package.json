@@ -1,0 +1,105 @@
+{
+  "name": "sightline",
+  "displayName": "Sightline",
+  "description": "A live, editable map of your .NET solution beside your code: projects, dependency injection, HTTP endpoints, request flows and problems.",
+  "version": "0.0.0",
+  "publisher": "revington",
+  "license": "MIT",
+  "icon": "icon.png",
+  "homepage": "https://sightline.revington.co",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ravindu-rev/sightline"
+  },
+  "bugs": {
+    "url": "https://github.com/ravindu-rev/sightline/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "dotnet",
+    "csharp",
+    "aspnetcore",
+    "dependency injection",
+    "architecture",
+    "code map",
+    "endpoints"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnx",
+    "workspaceContains:**/*.csproj"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sightline.open",
+        "title": "Open the map",
+        "category": "Sightline",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "sightline.reveal",
+        "title": "Show in Sightline",
+        "category": "Sightline"
+      },
+      {
+        "command": "sightline.stop",
+        "title": "Stop the map",
+        "category": "Sightline"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "sightline.reveal",
+          "when": "editorLangId == csharp",
+          "group": "navigation@90"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "sightline.reveal",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "editorTextFocus && editorLangId == csharp"
+      }
+    ],
+    "configuration": {
+      "title": "Sightline",
+      "properties": {
+        "sightline.openIn": {
+          "type": "string",
+          "enum": [
+            "browser",
+            "editor"
+          ],
+          "enumDescriptions": [
+            "Open the map in your web browser.",
+            "Open the map in a VS Code tab (Simple Browser)."
+          ],
+          "default": "browser",
+          "description": "Where the map opens."
+        },
+        "sightline.command": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "How to start Sightline, for example `sightline` for a global install. Empty: the repository's own tool (`dotnet sightline`) when `sightline init` pinned it, otherwise `dnx Co.Revington.Sightline`."
+        },
+        "sightline.problems": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Sightline's problems (dependency injection, layer rules) in the Problems panel while the map is open."
+        }
+      }
+    }
+  }
+}

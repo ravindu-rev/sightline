@@ -2,9 +2,16 @@
 // Typing in the editor sends the unsaved text to the server, so the map updates before saving.
 // Markup is built from strings; every value from the analyzed code goes through esc().
 
-import { esc, icon, typeCode, verbChip, tagLabel, fileName, plural } from './ui.js';
+import { esc, icon, typeCode, verbChip, tagLabel, fileName, plural, remember, toast } from './ui.js';
 import { api } from './api.js';
 import { KIND_GROUP, describeKinds } from './models.js';
+
+const EDITORS = [['', 'Default editor'], ['vscode', 'VS Code'], ['cursor', 'Cursor'], ['rider', 'Rider'], ['visualstudio', 'Visual Studio']];
+const SEVERITY_WORDS = { error: 'Error', warning: 'Warning', info: 'Note' };
+const RULE_WORDS = {
+  'captive-dependency': 'singleton holds a scoped service', 'missing-registration': 'never registered',
+  'dependency-cycle': 'circular dependency', 'layer-violation': 'layer rule', 'unused-registration': 'unused registration',
+};
 
 const STYLE_WORDS = {
   minimal: 'Minimal API endpoint', controller: 'Controller action', hub: 'SignalR hub',
@@ -36,12 +43,16 @@ export class Inspector {
     this.unsavedEl = root.querySelector('#ed-unsaved');
     this.saveBtn = root.querySelector('#ed-save');
     this.discardBtn = root.querySelector('#ed-discard');
-    this.openLink = root.querySelector('#ed-open');
+    this.openGroup = root.querySelector('#ed-open-group');
+    this.openBtn = root.querySelector('#ed-open');
+    this.openLabel = root.querySelector('#ed-open-label');
+    this.editorMenu = root.querySelector('#ed-editors');
     this.emptyEl = root.querySelector('#ed-empty');
+    this.line = 1;
 
     this.cm = CodeMirror(root.querySelector('#ed-body'), {
       mode: 'text/x-csharp', lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false,
-      matchBrackets: true, autoCloseBrackets: true, styleActiveLine: true,
+      matchBrackets: true, autoCloseBrackets: true, styleActiveLine: true, readOnly: api.readOnly,
       extraKeys: { 'Ctrl-S': () => this.save(), 'Cmd-S': () => this.save() },
     });
     this.cm.getWrapperElement().hidden = true;
@@ -52,17 +63,64 @@ export class Inspector {
 
     this.saveBtn.addEventListener('click', () => this.save());
     this.discardBtn.addEventListener('click', () => this.discard());
+    this.saveBtn.hidden = this.discardBtn.hidden = api.readOnly;
+    this.#bindOpen(root);
 
     this.detail.addEventListener('click', (e) => {
       const go = e.target.closest('[data-go]');
       if (go) return this.actions.select(go.dataset.go);
 
       const site = e.target.closest('[data-file]');
-      if (site) return this.openFile(site.dataset.file, Number(site.dataset.line), Number(site.dataset.line));
+      if (site) return this.openFile(site.dataset.file, Number(site.dataset.line) || null, Number(site.dataset.line) || null);
 
       const act = e.target.closest('[data-act]');
-      if (act) this.actions[act.dataset.act]?.(act.dataset.id);
+      if (act) this.actions[act.dataset.act]?.(act.dataset.id, act);
     });
+  }
+
+  // ---------------------------------------------------------------- open in an editor
+
+  #bindOpen(root) {
+    // Exports and the website demo link to the file on GitHub; the tool opens it in an editor.
+    const label = () => {
+      if (api.webUrl) return api.webUrl(this.file ?? '', 1) ? 'Open on GitHub' : '';
+      const chosen = remember.get('editor', '');
+      return chosen ? 'Open in ' + EDITORS.find(([id]) => id === chosen)?.[1] : 'Open in editor';
+    };
+    this.openLabel.textContent = label();
+
+    this.openBtn.addEventListener('click', async () => {
+      if (!this.file) return;
+      if (api.webUrl) {
+        const url = api.webUrl(this.file, this.line);
+        if (url) window.open(url, '_blank', 'noopener');
+        return;
+      }
+      try {
+        const result = await api.open(this.file, this.line, remember.get('editor', ''));
+        if (!result.opened) throw new Error(result.message);
+        toast(`Opened in ${result.editor}`);
+      } catch (err) {
+        toast(String(err.message ?? err) + ' Opening VS Code through its link instead.');
+        location.href = 'vscode://file/' + encodeURI(this.file.replace(/\\/g, '/')) + ':' + this.line;
+      }
+    });
+
+    const menuButton = root.querySelector('#ed-editor');
+    menuButton.hidden = Boolean(api.webUrl);
+    this.editorMenu.innerHTML = EDITORS.map(([id, name]) => `<button role="menuitem" data-editor="${id}">${esc(name)}</button>`).join('');
+    menuButton.addEventListener('click', () => { this.editorMenu.hidden = !this.editorMenu.hidden; });
+    this.editorMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-editor]');
+      if (!item) return;
+      remember.set('editor', item.dataset.editor);
+      this.openLabel.textContent = label();
+      this.editorMenu.hidden = true;
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('#ed-open-group')) this.editorMenu.hidden = true;
+    });
+    this.openLabelFor = label;
   }
 
   // ---------------------------------------------------------------- selection
@@ -73,6 +131,11 @@ export class Inspector {
     this.#renderDetail(false);
     const n = sel?.node ? this.store.node(sel.node) : null;
     if (n?.file && n.kind !== 'project') this.openFile(n.file, n.line, n.endLine);
+  }
+
+  /** Draws the details again, keeping the scroll position (new requests, new problems). */
+  rerender() {
+    this.#renderDetail(true);
   }
 
   /** Called after every live update. */
@@ -161,11 +224,16 @@ export class Inspector {
     this.unsavedEl.hidden = !this.dirty;
     this.saveBtn.disabled = !this.dirty;
     this.discardBtn.disabled = !this.dirty;
-    this.openLink.hidden = !this.file;
-    if (this.file) this.openLink.href = editorLink(this.file, line ?? 1);
+    // Save and Discard only matter with unsaved changes; without them the file name gets the room.
+    this.saveBtn.hidden = this.discardBtn.hidden = api.readOnly || !this.dirty;
+    if (line) this.line = line;
+    const label = this.openLabelFor?.() ?? '';
+    this.openGroup.hidden = !this.file || !label;
+    this.openLabel.textContent = label;
   }
 
   #edited() {
+    if (api.readOnly) return;
     this.dirty = true;
     this.#updateBar();
     clearTimeout(this.typing);
@@ -206,10 +274,14 @@ export class Inspector {
     if (n) html = this[`_${n.kind}`]?.(n) ?? this.#sign(n, esc(n.name), '');
     else if (s?.edge) html = this.#edge(s.edge);
     else if (s?.notes) html = this.#notes(s.notes);
+    else if (s?.problems) html = this.#problemList();
+    else if (s?.custom) html = s.custom();
     else html = '<div class="hint"><b>Nothing selected</b>Pick an endpoint, service or class on the left, or click anything on the map. ' +
-      'Its details show here and its code opens below, ready to edit.</div>';
+      (api.readOnly ? 'Its details and its code show here.</div>' : 'Its details show here and its code opens below, ready to edit.</div>');
 
     this.detail.innerHTML = html;
+    // Live parts (the request panel of an endpoint) keep their own state and are put back after each render.
+    for (const slot of this.detail.querySelectorAll('[data-slot]')) this.slots?.[slot.dataset.slot]?.(slot, n);
     this.detail.scrollTop = top;
   }
 
@@ -288,6 +360,7 @@ export class Inspector {
     return this.#sign(n, esc(n.name), esc(where)) +
       (chips ? `<div class="chips top">${chips}</div>` : '') +
       this.#actions(this.#act('focus', n.id, 'focus', 'Focus on this type')) +
+      this.#problemsAbout([n.id, ...members.map((x) => x.id)]) +
       this.#section('Depends on', out) +
       this.#section('Used by', into) +
       (rows ? `<h4>Members<small>${members.length}</small></h4><div class="rows">${rows}</div>` : '');
@@ -314,6 +387,7 @@ export class Inspector {
         callable && this.#act('flow', n.id, 'flow', 'Trace what it calls'),
         callable && this.#act('callers', n.id, 'callers', 'Trace who calls it'),
         owner && this.#act('focus', owner.id, 'focus', 'Focus on ' + owner.name)) +
+      this.#problemsAbout([n.id]) +
       this.#section('Implements', s.abstractions(n.id).map((a) => this.#link(a.id))) +
       this.#section('Implemented by', s.implementations(n.id).map((i) => this.#link(i.id))) +
       this.#section('Calls', calls, 'in source order') +
@@ -332,6 +406,8 @@ export class Inspector {
       `<div class="chips top">${m.auth ? '<span class="chip lock">requires authorization</span>' : ''}` +
       `${m.routeName ? `<span class="chip">name ${esc(m.routeName)}</span>` : ''}</div>` +
       this.#actions(this.#act('flow', n.id, 'flow', 'Trace this request')) +
+      this.#problemsAbout([n.id]) +
+      '<div class="slot" data-slot="endpoint"></div>' +
       this.#section('Handled by', [m.handler, m.target].filter(Boolean).map((id) => this.#link(id))) +
       this.#section('Mapped in', m.declaredIn && m.declaredIn !== m.handler ? [this.#link(m.declaredIn)] : []) +
       this.#section('Receives', uses) +
@@ -351,6 +427,7 @@ export class Inspector {
       `<dl class="kv"><dt>Contains</dt><dd>${esc(plural(types, 'type'))}${endpoints ? ', ' + esc(plural(endpoints, 'endpoint')) : ''}</dd>` +
       `<dt>File</dt><dd class="mono">${esc(n.file ?? '')}</dd></dl>` +
       this.#actions(this.#act('toggle', n.id, 'expand', 'Open or close on the map')) +
+      this.#problemsAbout([n.id]) +
       this.#section('References', refs) +
       this.#section('Referenced by', usedBy) +
       this.#section('Packages', packages, m.transitive ? `plus ${m.transitive} pulled in by these` : '');
@@ -389,9 +466,45 @@ export class Inspector {
       this.#actions(this.#act('reload', '', 'reload', 'Load the solution again')) +
       `<div class="rows">${notes.map((x) => `<pre class="sig">${esc(x)}</pre>`).join('')}</div>`;
   }
+
+  // ---------------------------------------------------------------- problems
+
+  /** One problem: what is wrong, where, and links to the things involved. */
+  #problem(p, { links = true } = {}) {
+    const where = p.file ? `<button class="where" data-file="${esc(p.file)}" data-line="${p.line ?? ''}">${esc(fileName(p.file))}${p.line ? ':' + p.line : ''}</button>` : '';
+    const involved = links ? (p.nodes ?? []).map((id) => this.#link(id)).join('') : '';
+    return `<div class="problem pr-${esc(p.severity)}"><div class="ph"><span class="sev">${esc(SEVERITY_WORDS[p.severity] ?? p.severity)}</span>` +
+      `<b>${esc(p.title)}</b><span class="rule">${esc(RULE_WORDS[p.rule] ?? p.rule)}</span></div>` +
+      `<p>${esc(p.message)}</p>${where || involved ? `<div class="chips">${where}${involved}</div>` : ''}</div>`;
+  }
+
+  /** Problems about this node (and, for a type, its members). */
+  #problemsAbout(ids) {
+    const seen = new Set();
+    const list = [];
+    for (const id of ids) for (const p of this.store.problemsFor(id)) if (!seen.has(p.id)) { seen.add(p.id); list.push(p); }
+    if (!list.length) return '';
+    return `<h4>Problems<small>${list.length}</small></h4>` + list.map((p) => this.#problem(p, { links: false })).join('');
+  }
+
+  #problemList() {
+    const s = this.store;
+    const problems = s.problems ?? [];
+    const coverage = s.coverage ?? [];
+    const count = (level) => problems.filter((p) => p.severity === level).length;
+    const summary = problems.length
+      ? [['error', 'error'], ['warning', 'warning'], ['info', 'note']].filter(([l]) => count(l)).map(([l, w]) => plural(count(l), w)).join(', ')
+      : 'No problems found';
+
+    const notFollowed = coverage.map((c) =>
+      `<div class="cover"><div class="ph"><b>${esc(c.label)}</b><span class="rule">${esc(plural(c.count, 'place'))}</span></div>` +
+      `<div class="chips">${(c.sites ?? []).map((site) =>
+        `<button class="where" data-file="${esc(site.file)}" data-line="${site.line || ''}">${esc(site.node ? s.label(site.node) || fileName(site.file) : fileName(site.file))}${site.line ? ':' + site.line : ''}</button>`).join('')}</div></div>`).join('');
+
+    return `<div class="sign"><div><h2>Problems</h2><p>${esc(summary)}. Sightline checks the dependency injection setup ` +
+      `and the layer rules in sightline.json as you edit.</p></div></div>` +
+      (problems.length ? problems.map((p) => this.#problem(p)).join('') : '<p class="ok">Nothing to fix: every service that is asked for is registered, no singleton holds a scoped service, and there are no circular dependencies.</p>') +
+      (coverage.length ? `<h4>Not followed<small>the map may miss things here</small></h4>${notFollowed}` : '');
+  }
 }
 
-/** vscode:// link that opens a file at a line. */
-function editorLink(file, line) {
-  return 'vscode://file/' + encodeURI(file.replace(/\\/g, '/')) + ':' + line;
-}

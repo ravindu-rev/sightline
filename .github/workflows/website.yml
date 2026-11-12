@@ -41,10 +41,27 @@ jobs:
           dotnet-version: 10.0.x
 
       # The demo on the site is recorded from the real tool running on the sample solution.
+      # CF_ANALYTICS_TOKEN (a repository variable) turns on Cloudflare Web Analytics; without it there is none.
       - name: Build the site
+        env:
+          CF_ANALYTICS_TOKEN: ${{ vars.CF_ANALYTICS_TOKEN }}
         run: |
           dotnet restore samples/Shop/Shop.sln
           node site/generate.mjs --out _site
+
+      # The map of a well-known open-source solution, so visitors can see Sightline on real code:
+      # eShop (MIT, by the .NET Foundation) at a fixed commit. Its source is read from GitHub by the page,
+      # not copied into the site.
+      - name: Map of eShop
+        env:
+          ESHOP_COMMIT: 913acea66708a59595351174cee9b29f37179d29
+        run: |
+          git init -q "$RUNNER_TEMP/eShop"
+          git -C "$RUNNER_TEMP/eShop" fetch -q --depth 1 https://github.com/dotnet/eShop "$ESHOP_COMMIT"
+          git -C "$RUNNER_TEMP/eShop" checkout -q FETCH_HEAD
+          dotnet run --project src/Co.Revington.Sightline -c Release -- export "$RUNNER_TEMP/eShop/eShop.slnx" \
+            --out _site/explore/eshop --title "eShop" \
+            --source-url "https://raw.githubusercontent.com/dotnet/eShop/$ESHOP_COMMIT/{path}"
 
       - uses: actions/upload-pages-artifact@v5
         with:

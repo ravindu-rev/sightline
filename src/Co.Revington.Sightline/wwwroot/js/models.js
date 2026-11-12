@@ -29,6 +29,19 @@ const ARROW = '→';
 
 // -------------------------------------------------------------------- node builders
 
+/** A dot in the corner of a station that has problems; its colour says how bad the worst one is. */
+export function badge(store, id) {
+  const severity = store.severityOf(id);
+  if (!severity) return '';
+  const list = store.problemsFor(id);
+  return `<span class="pb pb-${severity}" title="${esc(list.map((p) => p.title).join('\n'))}"></span>`;
+}
+
+/** Marks a station the running app confirmed (it saw the endpoint or the registration). */
+function runtimeMark(n) {
+  return n.meta?.runtime === 'only' ? '<span class="chip run" title="Seen only in the running app">runtime</span>' : '';
+}
+
 function typeNode(store, t, extra = {}) {
   // extra.plain: name only. extra.compact: name and role, no DI lifetime. Both keep nodes narrow.
   const tag = extra.plain ? null : (t.meta.tags ?? []).find((x) => SHOWN_TAGS.has(x));
@@ -36,7 +49,8 @@ function typeNode(store, t, extra = {}) {
     id: t.id, kind: 'type', zone: store.zoneClass(t.id), ref: t.id,
     html: typeCode(t.meta.typeKind) + `<span class="t">${esc(t.name)}</span>` +
       (tag ? `<span class="chip">${esc(tagLabel(tag))}</span>` : '') +
-      (t.meta.lifetime && !extra.plain && !extra.compact ? `<span class="chip life">${esc(t.meta.lifetime)}</span>` : ''),
+      (t.meta.lifetime && !extra.plain && !extra.compact ? `<span class="chip life">${esc(t.meta.lifetime)}</span>` : '') +
+      badge(store, t.id),
     title: `${t.meta.typeKind} ${t.ns ? t.ns + '.' : ''}${t.name}`,
     ...extra,
   };
@@ -50,7 +64,7 @@ function memberNode(store, m, extra = {}) {
   return {
     id: m.id, kind: 'member', zone: store.zoneClass(m.id), ref: m.id,
     html: `<span class="col"><span class="s">${esc(owner?.name ?? '')}${extra.note ? ` <i>${esc(extra.note)}</i>` : ''}</span>` +
-      `<span class="t">${esc(name)}</span></span>${extra.more ? `<span class="more">+${extra.more}</span>` : ''}`,
+      `<span class="t">${esc(name)}</span></span>${extra.more ? `<span class="more">+${extra.more}</span>` : ''}${badge(store, m.id)}`,
     title: `${owner?.name ?? ''}.${m.meta.sig}`,
     ...extra,
   };
@@ -60,7 +74,7 @@ function endpointNode(store, ep, extra = {}) {
   return {
     id: ep.id, kind: 'endpoint', zone: store.zoneClass(ep.id), ref: ep.id,
     html: verbChip(ep.meta.verb) + `<span class="route">${esc(ep.meta.route)}</span>` +
-      (ep.meta.auth ? `<span class="chip lock">auth</span>` : ''),
+      (ep.meta.auth ? `<span class="chip lock">auth</span>` : '') + runtimeMark(ep) + badge(store, ep.id),
     title: ep.name,
     ...extra,
   };
@@ -73,7 +87,7 @@ function projectNode(store, p, typeCount, endpointCount) {
     html: `<span class="col"><span class="t">${esc(p.name)}</span><span class="meta">` +
       `<span class="chip">${esc(p.meta.projectKind)}</span>` +
       (p.meta.tfm ? `<span class="chip">${esc(p.meta.tfm)}</span>` : '') +
-      `<span class="s">${esc(counts)}</span></span></span>`,
+      `<span class="s">${esc(counts)}</span></span></span>${badge(store, p.id)}`,
     title: 'Double-click to open this project',
   };
 }
@@ -220,19 +234,27 @@ export function mapModel(store, st) {
     m.refs.push(e.id);
   };
 
+  // Lines between projects follow the references written in the project files. Code that uses a
+  // project it only reaches through another one adds to no line of its own; it shows when hovered.
+  // Drawing every such use as a line turns a big solution into a mesh.
+  const references = new Set();
+  for (const e of store.edges.values())
+    if (e.kind === 'projectRef' || e.kind === 'packageRef') references.add(e.source + ARROW + e.target);
+
   const between = new Map();          // project -> project: always drawn
-  const within = new Map();           // type-level: drawn for the hovered or selected node
+  const within = new Map();           // drawn for the hovered or selected node
   for (const e of store.edges.values()) {
     const isRef = e.kind === 'projectRef' || e.kind === 'packageRef';
     if (e.kind === 'registers' || (!isRef && !(e.kind in KIND_GROUP))) continue;
 
     const ps = projectOf(e.source), pt = projectOf(e.target);
-    if (ps && pt && ps !== pt) merge(between, ps, pt, e);
+    const direct = ps && pt && ps !== pt && references.has(ps + ARROW + pt);
+    if (direct) merge(between, ps, pt, e);
     if (isRef || !st.kinds.has(KIND_GROUP[e.kind])) continue;
 
     const s = repOf(e.source), t = repOf(e.target);
     if (!s || !t || s === t) continue;
-    if (collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
+    if (direct && collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
     merge(within, s, t, e);
   }
 
@@ -257,6 +279,10 @@ export function mapModel(store, st) {
 const STEP_KINDS = new Set(['handles', 'calls', 'dispatches', 'db', 'http']);
 const CALLER_KINDS = new Set(['handles', 'calls', 'dispatches']);
 
+// A flow stops growing at this many stations; the rest shows as "+N" on the stations where it stops.
+// Past this, a picture is unreadable anyway, and laying it out takes seconds.
+const FLOW_BUDGET = 160;
+
 export function flowModel(store, st) {
   const root = store.node(st.root);
   const nodes = new Map();
@@ -264,6 +290,7 @@ export function flowModel(store, st) {
   if (!root) return { key: 'flow:', direction: 'RIGHT', nodes: [], edges: [], rep: () => null };
 
   let truncated = 0;
+  const full = () => nodes.size >= FLOW_BUDGET;
   const notes = new Map();            // node id -> how the flow reaches it, shown inside the node
   const add = (id, spec) => { if (!nodes.has(id)) nodes.set(id, spec); };
   const link = (source, target, kind, extra = {}) => {
@@ -285,7 +312,7 @@ export function flowModel(store, st) {
 
     const steps = store.outOf(id, STEP_KINDS).slice().sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
     if (!steps.length) return;
-    if (depth >= st.depth) {
+    if (depth >= st.depth || full()) {
       truncated++;
       nodes.get(id).more = steps.length;
       return;
@@ -335,7 +362,7 @@ export function flowModel(store, st) {
       for (const e of store.intoOf(a.id, CALLER_KINDS)) callers.push({ e, via: store.node(a.parent)?.name ?? '' });
 
     if (!callers.length) return;
-    if (depth >= st.depth) {
+    if (depth >= st.depth || full()) {
       truncated++;
       nodes.get(id).more = callers.length;
       return;

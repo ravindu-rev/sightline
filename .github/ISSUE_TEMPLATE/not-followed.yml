@@ -1,0 +1,24 @@
+name: The map does not follow this
+description: A framework or pattern whose endpoints, handlers or registrations the map misses.
+labels: [coverage]
+body:
+  - type: input
+    id: framework
+    attributes:
+      label: Framework or pattern
+      placeholder: "MassTransit consumers, Wolverine handlers, Carter modules, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: How it looks in code
+      description: A short example of the registration, endpoint or call the map should follow.
+      render: csharp
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the map should show
+      description: For example "an endpoint POST /orders handled by CreateOrder.Handle", or "a step from Publish to the consumer".

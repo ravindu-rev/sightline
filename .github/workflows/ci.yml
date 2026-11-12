@@ -1,6 +1,6 @@
 name: CI
 
-# Pull requests are built and tested on Linux and Windows before they can reach master.
+# Pull requests are built and tested on Linux, Windows and macOS before they can reach master.
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -31,8 +31,55 @@ jobs:
           dotnet build Co.Revington.Sightline.sln -c Release --no-restore
           dotnet test Co.Revington.Sightline.sln -c Release --no-build
 
+      # The tool checks the sample the way a team would check its own solution in CI.
+      - name: Check the sample
+        run: dotnet run --project src/Co.Revington.Sightline -c Release --no-build -- check samples/Shop/Shop.sln --fail-on warning
+
       # Proves both NuGet packages still build; nothing is published from a pull request.
       - name: Pack
         run: |
           dotnet pack src/Co.Revington.Sightline/Co.Revington.Sightline.csproj -c Release -o artifacts
           dotnet pack src/Co.Revington.Sightline.Hosting/Co.Revington.Sightline.Hosting.csproj -c Release -o artifacts
+
+      - name: Package the VS Code extension
+        if: runner.os == 'Linux'
+        working-directory: vscode
+        run: npx --yes @vscode/vsce@3 package --no-dependencies --out ../artifacts/sightline.vsix
+
+  # What the pull request does to the map of Sightline itself, as a comment, made by the tool built
+  # from the pull request. The same comment is what the Sightline GitHub Action posts for other repositories.
+  map:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Compare the maps
+        run: |
+          dotnet build src/Co.Revington.Sightline -c Release
+          dotnet run --project src/Co.Revington.Sightline -c Release --no-build -- \
+            diff Co.Revington.Sightline.sln --base "${{ github.event.pull_request.base.sha }}" --format markdown --out "$RUNNER_TEMP/map.md"
+          cat "$RUNNER_TEMP/map.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # Pull requests from forks get a read-only token; the summary above still shows the result.
+      - name: Comment on the pull request
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- sightline-map-diff -->")) | .id' | tail -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$RUNNER_TEMP/map.md" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/map.md"
+          fi

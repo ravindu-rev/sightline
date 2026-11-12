@@ -3,13 +3,18 @@ namespace Co.Revington.Sightline.Analysis;
 /// Turns per-file facts into one graph: nodes, edges and the DI service list.
 internal static class GraphBuilder
 {
-    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts)
+    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts, CheckOptions? checks = null,
+        IReadOnlyList<RuntimeApp>? runtime = null)
     {
         var g = new Graph();
         var docs = docFacts
             .OrderBy(d => d.File, StringComparer.OrdinalIgnoreCase)
             .ThenBy(d => d.Project, StringComparer.Ordinal)
             .ToList();
+
+        // Registrations only the running app knows about count like the ones read from the code.
+        var runtimeRegistrations = runtime is { Count: > 0 } ? RuntimeMerge.Registrations(runtime, docs, projects) : null;
+        if (runtimeRegistrations is not null) docs.Add(runtimeRegistrations);
 
         // DI registrations first: they label types and decide what counts as an injection.
         var services = new HashSet<string>(StringComparer.Ordinal);
@@ -32,9 +37,18 @@ internal static class GraphBuilder
             .ToDictionary(x => x.Key, x => x.Select(h => h.HandlerMemberId).Distinct().ToList());
 
         var endpoints = AddEndpoints(g, docs);
+        var runtimeEndpoints = runtime is { Count: > 0 } ? RuntimeMerge.Endpoints(g, runtime, projects) : 0;
         AddRefs(g, docs, endpoints, handlers, services, implementations);
         AddTypeLinks(g, docs);
         AddServices(g, docs);
+        (g.Problems, g.Coverage) = Checks.Run(g, docs, projects, endpoints, checks ?? CheckOptions.None);
+
+        var runtimeServices = runtimeRegistrations?.Di.Count ?? 0;
+        if (runtimeEndpoints + runtimeServices > 0)
+            g.Coverage.Insert(0, new CoverageNote("runtime",
+                $"Found only in the running app: {runtimeEndpoints} endpoint{(runtimeEndpoints == 1 ? "" : "s")} and " +
+                $"{runtimeServices} registration{(runtimeServices == 1 ? "" : "s")} that reading the code missed",
+                runtimeEndpoints + runtimeServices, []));
         return g;
     }
 
@@ -68,11 +82,44 @@ internal static class GraphBuilder
             g.Add(new Node { Id = p.Id, Kind = "project", Name = p.Name, File = p.Path, Meta = meta });
         }
 
+        var direct = DirectReferences(projects);
         foreach (var p in projects)
         {
-            foreach (var r in p.ProjectRefs) g.Link("projectRef", p.Id, r);
+            foreach (var r in direct[p.Id]) g.Link("projectRef", p.Id, r);
             foreach (var k in p.Packages.Where(k => k.Direct)) g.Link("packageRef", p.Id, "pkg:" + k.Name, k.Version);
         }
+    }
+
+    /// The compiler sees every project a project depends on, also through other projects. The map shows
+    /// the references written in the project file, and of the rest (added by imported .props files, say)
+    /// those that no other reference implies.
+    static Dictionary<string, List<string>> DirectReferences(IReadOnlyList<ProjectFacts> projects)
+    {
+        var written = projects.ToDictionary(p => p.Id, p => p.WrittenRefs, StringComparer.Ordinal);
+        var refs = projects.ToDictionary(p => p.Id, p => p.ProjectRefs.Distinct().ToHashSet(), StringComparer.Ordinal);
+        var reach = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        HashSet<string> Reach(string id, HashSet<string> visiting)
+        {
+            if (reach.TryGetValue(id, out var known)) return known;
+            var all = new HashSet<string>(StringComparer.Ordinal);
+            if (!visiting.Add(id)) return all;           // a reference loop; MSBuild would not build it anyway
+            foreach (var r in refs.GetValueOrDefault(id) ?? [])
+            {
+                all.Add(r);
+                all.UnionWith(Reach(r, visiting));
+            }
+            visiting.Remove(id);
+            return reach[id] = all;
+        }
+
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (id, mine) in refs)
+            result[id] = mine
+                .Where(c => written[id].Contains(c) || !mine.Any(b => b != c && Reach(b, []).Contains(c)))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+        return result;
     }
 
     static void AddTypes(Graph g, List<DocFacts> docs, HashSet<string> services,
@@ -159,6 +206,7 @@ internal static class GraphBuilder
                 if (ep.HandlerId is not null && g.Has(ep.HandlerId)) meta["handler"] = ep.HandlerId;
                 if (ep.TargetTypeId is not null && g.Has(ep.TargetTypeId)) meta["target"] = ep.TargetTypeId;
                 if (g.Has(ep.Owner)) meta["declaredIn"] = ep.Owner;
+                if (ep.Request is not null) meta["request"] = Requests.ForRoute(ep.Request, route);
 
                 g.Add(new Node
                 {
@@ -241,6 +289,10 @@ internal static class GraphBuilder
 
                     case "ctor-param":
                         if (g.Has(r.To)) g.Link(Injectable(r.To) ? "injects" : "references", from, r.To, file: d.File, line: r.Line);
+                        break;
+
+                    case "lookup":
+                        if (g.Has(r.To)) g.Link("injects", from, r.To, "looked up", d.File, r.Line);
                         break;
                 }
             }

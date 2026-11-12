@@ -60,11 +60,20 @@ function buildLandingPage(version) {
   fs.mkdirSync(out, { recursive: true });
 
   // sightline.schema.json: editors fetch it to suggest the settings in sightline.json.
-  for (const name of ['site.css', 'site.js', 'sightline.schema.json']) fs.copyFileSync(path.join(site, name), path.join(out, name));
+  // badge.svg: the "map: Sightline" badge for READMEs that link to an exported map.
+  for (const name of ['site.css', 'site.js', 'sightline.schema.json', 'badge.svg']) fs.copyFileSync(path.join(site, name), path.join(out, name));
   fs.cpSync(path.join(site, 'fonts'), path.join(out, 'fonts'), { recursive: true });
   fs.copyFileSync(path.join(root, 'assets', 'icon.png'), path.join(out, 'icon.png'));
+  if (fs.existsSync(path.join(root, 'assets', 'og.png'))) fs.copyFileSync(path.join(root, 'assets', 'og.png'), path.join(out, 'og.png'));
 
-  const html = fs.readFileSync(path.join(site, 'index.html'), 'utf8').replaceAll('{{version}}', version);
+  let html = fs.readFileSync(path.join(site, 'index.html'), 'utf8').replaceAll('{{version}}', version);
+
+  // Cloudflare Web Analytics: no cookies, so no consent banner. Only when the repository sets the token.
+  const token = process.env.CF_ANALYTICS_TOKEN?.trim();
+  if (token) {
+    if (!/^[a-f0-9]{32}$/i.test(token)) throw new Error('CF_ANALYTICS_TOKEN should be the 32-character token from Cloudflare Web Analytics.');
+    html = html.replace('</body>', `  <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${token}"}'></script>\n</body>`);
+  }
   fs.writeFileSync(path.join(out, 'index.html'), html);
 }
 
@@ -149,7 +158,10 @@ async function record() {
     if (!apply.edges.added.some((e) => e.kind === 'calls' && e.target.includes('SaveAsync')))
       throw new Error('The recorded edit did not add the expected call. The analyzer or the sample has changed.');
 
-    const recording = withoutLocalPaths({ graph, sources, edit: { ...EDIT, file, apply, revert } });
+    // The sample's tours (samples/Shop/.sightline/tours), played in the demo like in the tool.
+    const tours = await (await call('/api/tours')).json();
+
+    const recording = withoutLocalPaths({ graph, sources, tours, edit: { ...EDIT, file, apply, revert } });
     assertNoLocalPaths(recording);
     return recording;
   } finally {
