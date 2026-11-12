@@ -52,6 +52,10 @@ internal static class Checks
         public Dictionary<string, HashSet<string>> ImplLifetimes { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, List<Dependency>> ByConsumer { get; } = new(StringComparer.Ordinal);
         public HashSet<string> Used { get; } = new(StringComparer.Ordinal);
+
+        /// Type names that Razor files (.razor, .cshtml) ask for with @inject. Razor is not read as C#,
+        /// so these are matched by name.
+        public HashSet<string> RazorInjects { get; } = new(StringComparer.Ordinal);
         public bool Scanning { get; set; }
         public bool Decorating { get; set; }
         public List<Problem> Problems { get; } = [];
@@ -80,6 +84,7 @@ internal static class Checks
     {
         var c = new Context { Graph = g, Options = options };
         Collect(c, docs, endpointsByKey);
+        foreach (var p in projects) c.RazorInjects.UnionWith(p.RazorInjects);
 
         if (c.Severity("captive-dependency") is { } captive) CaptiveDependencies(c, captive);
         if (c.Severity("missing-registration") is { } missing) MissingRegistrations(c, missing);
@@ -103,7 +108,9 @@ internal static class Checks
         {
             foreach (var r in d.Di)
             {
-                if (r.ImplId is not null)
+                // An instance built by a factory delegate gets its constructor arguments from that code,
+                // not from dependency injection, so its constructor says nothing about registrations.
+                if (r.ImplId is not null && !r.Factory)
                 {
                     if (!c.ImplLifetimes.TryGetValue(r.ImplId, out var lifetimes)) c.ImplLifetimes[r.ImplId] = lifetimes = [];
                     lifetimes.Add(Simple(r.Lifetime));
@@ -127,7 +134,7 @@ internal static class Checks
             }
 
             foreach (var r in d.Refs)
-                if (r.Kind == "lookup") c.Used.Add(r.To);
+                if (r.Kind is "lookup" or "typearg") c.Used.Add(r.To);
 
             foreach (var cov in d.Coverage)
             {
@@ -350,11 +357,15 @@ internal static class Checks
         {
             if (c.Used.Contains(service) || !c.Graph.Nodes.TryGetValue(service, out var node)) continue;
             if (regs.Any(r => Simple(r.Lifetime) == "options" || r.Lifetime == "hosted")) continue;
+            var plainName = node.Name.Split('<')[0];
+            if (c.RazorInjects.Contains(plainName)) continue;
 
             // Things the framework or a dispatcher picks up by itself.
             var tags = Tags(c.Graph, service);
             if (tags.Intersect(["controller", "hub", "middleware", "handler", "hosted", "entrypoint"]).Any()) continue;
             if (Regex.IsMatch(node.Name, @"(Handler|Validator|Consumer|Filter|Middleware|Behavior|Behaviour|Profile|HostedService)(<.*>)?$")) continue;
+            // UI frameworks (MAUI, WPF, Blazor) create pages, views and view models by type, through navigation.
+            if (Regex.IsMatch(node.Name, @"(View|Page|ViewModel|Window|Dialog|Component|Form)(<.*>)?$")) continue;
 
             var r = regs[0];
             c.Add("unused-registration", severity, "A registration nothing asks for",

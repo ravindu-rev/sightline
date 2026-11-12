@@ -639,6 +639,12 @@ internal static partial class Extractor
                 return;
             }
 
+            // AddEntityFrameworkStores<ApplicationDbContext>(): a package that uses a type of the solution.
+            // Counts as a use, so its registration is not reported as unused. (Registrations themselves do not count.)
+            if (method.TypeArguments.Length > 0 && !IsDiMethod(def.Name) && !LookupNames.Contains(def.Name))
+                foreach (var t in method.TypeArguments.SelectMany(Sym.SourceTypesIn))
+                    if (Sym.Id(t) is { } typeArgId) _p.Facts.Refs.Add(new RefFact(_owner, typeArgId, "typearg", line));
+
             var owner = def.ContainingType;
             if (LookupNames.Contains(def.Name))
             {
@@ -914,12 +920,19 @@ internal static partial class Extractor
             impl ??= InferImplementation(node, service)
                      ?? (service is { TypeKind: TypeKind.Class, IsAbstract: false } ? service : null);
 
+            // AddSingleton<IFoo>(sp => new Foo(...)): a parameter of type Func<IServiceProvider, ...> got an argument.
+            // When the call does not resolve (packages missing), a lambda with one parameter (sp => ...) says the same.
+            var factory = node.ArgumentList.Arguments.Count > 0 && (method is not null
+                ? method.Parameters.Any(p => p.Type is INamedTypeSymbol { Name: "Func" } f && f.TypeArguments.FirstOrDefault()?.Name == "IServiceProvider")
+                : LifetimeMethod().IsMatch(name) && node.ArgumentList.Arguments.Any(a => a.Expression is SimpleLambdaExpressionSyntax
+                    or ParenthesizedLambdaExpressionSyntax { ParameterList.Parameters.Count: 1 }));
+
             _p.Facts.Di.Add(new DiFact(
                 Sym.IsSource(service) ? Sym.Id(service) : null,
                 service.ToDisplayString(ShortType),
                 impl is not null && Sym.IsSource(impl) ? Sym.Id(impl) : null,
                 impl?.ToDisplayString(ShortType),
-                Lifetime(name), name, _owner, LineOf(node)));
+                Lifetime(name), name, _owner, LineOf(node), factory));
         }
 
         /// AddScoped<IFoo>(sp => new Foo(..)) -> Foo

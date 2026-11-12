@@ -21,9 +21,11 @@ internal sealed record ImplFact(string AbstractId, string ImplId, string Kind);
 /// Message type -> handler method (MediatR-style).
 internal sealed record HandlerFact(string MessageTypeId, string HandlerMemberId, string Interface);
 
+/// Factory: the instance comes from a delegate (sp => new Foo(...)), so dependency injection does not
+/// pick the constructor's parameters itself.
 internal sealed record DiFact(
     string? ServiceId, string ServiceName, string? ImplId, string? ImplName,
-    string Lifetime, string Method, string Owner, int Line);
+    string Lifetime, string Method, string Owner, int Line, bool Factory = false);
 
 /// A method parameter that carries a route group, so the prefix comes from the caller.
 internal sealed record ParamRef(string MethodId, int Ordinal);

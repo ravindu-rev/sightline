@@ -35,6 +35,10 @@ public sealed class ProblemsFixture : IAsyncLifetime
             builder.Services.AddScoped<IB, B>();
             builder.Services.AddTransient<Leftover>();
             builder.Services.AddScoped<Reports>();
+            builder.Services.AddSingleton<IMadeByHand, MadeByHand>(sp => new MadeByHand(new Part()));
+            builder.Services.AddScoped<ShownInRazor>();
+            builder.Services.AddScoped<Settings>();
+            var settings = System.Text.Json.JsonSerializer.Deserialize<Settings>("{}");
             var app = builder.Build();
             app.MapGet("/report", (Reports reports, IClock clock) => reports.Today(clock));
             app.Run();
@@ -53,7 +57,14 @@ public sealed class ProblemsFixture : IAsyncLifetime
             {
                 public string Today(IClock clock) => "ok";
             }
+            public interface IMadeByHand { }
+            public interface IPart { }
+            public sealed class Part : IPart { }
+            public sealed class MadeByHand(IPart part) : IMadeByHand { }
+            public sealed class ShownInRazor { }
+            public sealed class Settings { }
             """);
+        Write("App/Pages/Status.razor", "@inject ShownInRazor shown\n<p>@shown</p>\n");
         Write("sightline.json", """
             {
               "layers": ["Domain", "App"],
@@ -120,6 +131,16 @@ public sealed class ProblemsTests(ProblemsFixture app) : IClassFixture<ProblemsF
         var p = One("unused-registration", "Leftover");
         Assert.Equal("info", p.Severity);
         Assert.DoesNotContain(app.Graph.Problems, x => x.Rule == "unused-registration" && x.Message.StartsWith("Reports", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Factories_razor_injects_and_type_arguments_are_not_false_alarms()
+    {
+        // MadeByHand gets its IPart from the factory lambda, not from dependency injection.
+        Assert.DoesNotContain(app.Graph.Problems, p => p.Rule == "missing-registration" && p.Message.Contains("IPart"));
+        // ShownInRazor is asked for by "@inject" in a .razor file; Settings is used as a type argument.
+        Assert.DoesNotContain(app.Graph.Problems, p => p.Rule == "unused-registration" && p.Message.StartsWith("ShownInRazor", StringComparison.Ordinal));
+        Assert.DoesNotContain(app.Graph.Problems, p => p.Rule == "unused-registration" && p.Message.StartsWith("Settings", StringComparison.Ordinal));
     }
 
     [Fact]
