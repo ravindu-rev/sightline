@@ -556,7 +556,8 @@ export class GraphView {
   #bind() {
     const host = this.host;
     const nodeOf = (target) => target.closest?.('.n, .gh')?.closest('[data-id]');
-    const isChrome = (target) => Boolean(target.closest?.('.canvas-tools, .zoom, .legend'));
+    // Controls laid over the map: clicks and the wheel there are theirs, not the map's.
+    const isChrome = (target) => Boolean(target.closest?.('.canvas-tools, .zoom, .legend, .tour-card, .empty'));
 
     host.addEventListener('wheel', (e) => {
       if (isChrome(e.target)) return;

@@ -523,7 +523,7 @@ a.tool { text-decoration: none; }
 .tour-step .grow { flex: 1; }
 .tour-step textarea { font-family: var(--font-ui); font-size: 13px; }
 .tour-card {
-  position: absolute; z-index: 8; left: 50%; bottom: 56px; transform: translateX(-50%); width: min(520px, calc(100% - 40px));
+  position: absolute; z-index: 8; left: 50%; bottom: 84px; transform: translateX(-50%); width: min(520px, calc(100% - 40px));
   padding: 12px 14px; background: var(--panel); border: 1px solid var(--rule); border-left: 5px solid var(--signal);
   border-radius: 10px; box-shadow: 0 16px 40px rgb(0 0 0 / .22);
 }
