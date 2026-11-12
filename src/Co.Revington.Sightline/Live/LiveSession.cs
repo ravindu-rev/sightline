@@ -22,7 +22,9 @@ internal sealed record OverlayWork(string Path, string? Text, bool Saved = false
 internal sealed record StatusInfo(string State, string Message);
 
 /// Filter: projects to leave off the map. Restore: run "dotnet restore" for projects that were never restored.
-internal sealed record LoadOptions(ProjectFilter Filter, bool Restore)
+/// Checks: settings for the problems the map reports. Watch: follow file changes after loading (off for
+/// one-shot commands such as "sightline check"). Log: where progress goes (stdout by default).
+internal sealed record LoadOptions(ProjectFilter Filter, bool Restore, CheckOptions? Checks = null, bool Watch = true, TextWriter? Log = null)
 {
     public static readonly LoadOptions Default = new(ProjectFilter.None, Restore: true);
 }
@@ -181,7 +183,7 @@ internal sealed class LiveSession
 
     void SetStatus(string state, string message)
     {
-        if (_status.State != state) Console.WriteLine($"  {state,-7} {message}");
+        if (_status.State != state) (_options.Log ?? Console.Out).WriteLine($"  {state,-7} {message}");
         _status = new StatusInfo(state, message);
         _hub.Publish("status", StatusJson);
     }
@@ -287,7 +289,7 @@ internal sealed class LiveSession
             if (await SetTextAsync(path, SourceText.From(text, Encoding.UTF8), ct))
                 await ReextractAsync(TrackedIds(path), ct);
 
-        var graph = GraphBuilder.Build(_projects, _facts.Values);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks);
         _snapshot = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         _hub.Publish("reload", $"{{\"version\":{_snapshot.Version}}}");
 
@@ -295,7 +297,15 @@ internal sealed class LiveSession
         var left = excluded.Count == 0 ? "" : $", {excluded.Count} left out by {SightlineConfig.FileName}";
         SetStatus("ready", $"{count("project")} projects, {count("type")} types, {count("endpoint")} endpoints in {sw.Elapsed.TotalSeconds:0.0}s{left}");
 
-        _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
+        if (_options.Watch) _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
+    }
+
+    /// Loads the solution once, without following changes. For one-shot commands (check, export, diff).
+    public async Task<Snapshot> LoadOnceAsync(CancellationToken ct)
+    {
+        await LoadAsync(ct);
+        if (_status.State != "ready") throw new InvalidOperationException(_status.Message);
+        return _snapshot;
     }
 
     static ParallelOptions Parallelism(CancellationToken ct) => new()
@@ -381,6 +391,7 @@ internal sealed class LiveSession
         return new
         {
             name = Name,
+            version = ToolInfo.Version,
             path = _target,
             root = RootDir,
             counts = new
@@ -442,7 +453,7 @@ internal sealed class LiveSession
         if (files.Count > 0)
         {
             await ReextractAsync(touched, ct);
-            Publish("edit", files, sw);
+            Publish("disk", files, sw);
         }
         if (reload) _reloadTimer.Change(700, Timeout.Infinite);
     }
@@ -471,7 +482,7 @@ internal sealed class LiveSession
 
         if (!await SetTextAsync(o.Path, text, ct)) return;
         await ReextractAsync(TrackedIds(o.Path), ct);
-        Publish("edit", [o.Path], sw);
+        Publish(o.Saved ? "save" : "edit", [o.Path], sw);
     }
 
     List<DocumentId> TrackedIds(string path) => _tracked.TryGetValue(path, out var ids) ? [.. ids] : [];
@@ -589,7 +600,7 @@ internal sealed class LiveSession
 
     void Publish(string reason, IReadOnlyList<string> files, Stopwatch sw)
     {
-        var graph = GraphBuilder.Build(_projects, _facts.Values);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks);
         var next = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         var relative = files.Select(f => Path.GetRelativePath(RootDir, f).Replace('\\', '/'));
         var patch = Snapshot.Diff(_snapshot, next, reason, relative, sw.ElapsedMilliseconds);

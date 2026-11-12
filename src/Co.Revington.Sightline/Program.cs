@@ -3,7 +3,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using Co.Revington.Sightline;
+using Co.Revington.Sightline.Commands;
 using Co.Revington.Sightline.Live;
+using Co.Revington.Sightline.Mcp;
 using Co.Revington.Sightline.Server;
 using Co.Revington.Sightline.Setup;
 using Microsoft.AspNetCore.Builder;
@@ -13,6 +15,10 @@ return Cli.Parse(args) switch
 {
     ExitCommand exit => exit.Code,
     InitCommand init => await Init.RunAsync(init.Options),
+    CheckCommand check => await CheckRunner.RunAsync(check),
+    ExportCommand export => await Exporter.RunAsync(export),
+    DiffCommand diff => await MapDiff.RunAsync(diff),
+    McpCommand mcp => await McpServer.RunAsync(mcp),
     MapCommand map => await OpenMapAsync(map.Options),
     _ => 1,
 };
@@ -29,7 +35,7 @@ static async Task<int> OpenMapAsync(MapOptions options)
     var port = FindFreePort(options.Port);
     var token = options.Token ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
     var hub = new EventHub();
-    var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore));
+    var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore, options.Checks));
     var companions = new Companions(closeWithApps: options.AttachPid is not null, Companions.DefaultGrace);
     var app = WebApp.Build(session, hub, port, token, options.UiDir, companions);
 

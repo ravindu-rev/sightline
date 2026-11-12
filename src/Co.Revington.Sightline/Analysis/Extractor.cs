@@ -56,6 +56,42 @@ internal static partial class Extractor
         "Send", "SendAsync", "Publish", "PublishAsync", "Dispatch", "DispatchAsync", "InvokeAsync", "Request", "RequestAsync",
     ];
 
+    /// Calls that ask the service provider for a service by type.
+    static readonly HashSet<string> LookupNames =
+    [
+        "GetService", "GetRequiredService", "GetServices", "GetKeyedService", "GetRequiredKeyedService", "GetKeyedServices",
+    ];
+
+    /// Calls whose effect Sightline cannot follow by reading the code. Strict: only when the method resolves
+    /// to a package (so a solution's own method with the same name is not mistaken for it).
+    static readonly Dictionary<string, (string Kind, string Label, bool Strict)> Blind = new()
+    {
+        ["Scan"] = ("scan", "Scrutor registers services by scanning assemblies", true),
+        ["Decorate"] = ("scan", "Scrutor decorates services", true),
+        ["RegisterServicesFromAssembly"] = ("scan", "MediatR registers handlers by scanning assemblies", false),
+        ["RegisterServicesFromAssemblies"] = ("scan", "MediatR registers handlers by scanning assemblies", false),
+        ["RegisterServicesFromAssemblyContaining"] = ("scan", "MediatR registers handlers by scanning assemblies", false),
+        ["AddValidatorsFromAssembly"] = ("scan", "FluentValidation registers validators by scanning assemblies", false),
+        ["AddValidatorsFromAssemblies"] = ("scan", "FluentValidation registers validators by scanning assemblies", false),
+        ["AddValidatorsFromAssemblyContaining"] = ("scan", "FluentValidation registers validators by scanning assemblies", false),
+        ["AddAutoMapper"] = ("scan", "AutoMapper finds its profiles by scanning assemblies", true),
+        ["RegisterAssemblyTypes"] = ("scan", "Autofac registers types by scanning assemblies", false),
+        ["AddConsumers"] = ("scan", "MassTransit finds consumers by scanning", true),
+        ["AddConsumersFromNamespaceContaining"] = ("scan", "MassTransit finds consumers by scanning", false),
+        ["UseWolverine"] = ("scan", "Wolverine finds message handlers by naming convention", true),
+        ["AddWolverine"] = ("scan", "Wolverine finds message handlers by naming convention", true),
+        ["AddFastEndpoints"] = ("endpoints", "FastEndpoints endpoints are classes, which Sightline does not list yet", true),
+        ["MapCarter"] = ("endpoints", "Carter modules map their routes at run time", true),
+        ["MapRazorPages"] = ("endpoints", "Razor Pages are not listed as endpoints", true),
+        ["MapRazorComponents"] = ("endpoints", "Blazor pages are not listed as endpoints", true),
+        ["MapBlazorHub"] = ("endpoints", "Blazor pages are not listed as endpoints", true),
+        ["MapControllerRoute"] = ("endpoints", "Conventional controller routes are listed as controller/action", true),
+        ["MapDefaultControllerRoute"] = ("endpoints", "Conventional controller routes are listed as controller/action", true),
+        ["MapAreaControllerRoute"] = ("endpoints", "Conventional controller routes are listed as controller/action", true),
+        ["MapReverseProxy"] = ("endpoints", "YARP proxies routes that come from configuration", true),
+        ["MapIdentityApi"] = ("endpoints", "Identity API endpoints come from a package", true),
+    };
+
     [GeneratedRegex(@"^(TryAdd|Add)(Keyed)?(Scoped|Transient|Singleton)$")]
     private static partial Regex LifetimeMethod();
 
@@ -63,6 +99,7 @@ internal static partial class Extractor
         LifetimeMethod().IsMatch(name) || name is "AddHostedService" or "AddHttpClient" or "Configure" or "AddOptions"
         || name.StartsWith("AddDbContext", StringComparison.Ordinal) || name == "AddPooledDbContextFactory";
 
+    // A DbContext added with AddDbContext, AddDbContextPool or AddDbContextFactory is itself a scoped service.
     static string Lifetime(string method) =>
         method.Contains("Scoped", StringComparison.Ordinal) ? "scoped"
         : method.Contains("Transient", StringComparison.Ordinal) ? "transient"
@@ -70,8 +107,35 @@ internal static partial class Extractor
         : method == "AddHostedService" ? "hosted"
         : method == "AddHttpClient" ? "httpclient"
         : method is "Configure" or "AddOptions" ? "options"
-        : method.Contains("Factory", StringComparison.Ordinal) ? "singleton"
         : "scoped";
+
+    /// The service behind a constructor or handler parameter, and how it is asked for.
+    /// Null for framework services (ILogger<T>, IConfiguration, ...) and anything not declared in the solution.
+    static (INamedTypeSymbol Service, string Wrapper)? DependencyOf(ITypeSymbol t)
+    {
+        if (t is not INamedTypeSymbol n || n.TypeKind == TypeKind.Error) return null;
+
+        if (n.IsGenericType && !Sym.IsSource(n))
+        {
+            var ns = n.ContainingNamespace?.ToDisplayString() ?? "";
+            var arg = n.TypeArguments.Length == 1 ? n.TypeArguments[0] as INamedTypeSymbol : null;
+            var wrapper = (n.Name, ns) switch
+            {
+                ("IEnumerable", "System.Collections.Generic") => "enumerable",
+                ("IOptions" or "IOptionsMonitor", "Microsoft.Extensions.Options") => "options",
+                ("IOptionsSnapshot", "Microsoft.Extensions.Options") => "options-scoped",
+                ("Lazy", "System") => "lazy",
+                ("Func", "System") => "func",
+                _ => null,
+            };
+            if (wrapper is null || arg is null || !Sym.IsSource(arg)) return null;
+            return (arg.OriginalDefinition, wrapper);
+        }
+
+        return Sym.IsSource(n) ? (n.OriginalDefinition, "") : null;
+    }
+
+    static bool IsServiceLike(INamedTypeSymbol t) => t.TypeKind == TypeKind.Interface || (t.TypeKind == TypeKind.Class && t.IsAbstract);
 
     static bool IsHandlerInterface(string name) =>
         name is "IConsumer" or "IHandleMessages" || (name.Length > 8 && name[0] == 'I' && name.EndsWith("Handler", StringComparison.Ordinal));
@@ -215,7 +279,47 @@ internal static partial class Extractor
 
             foreach (var member in td.Members) ExtractMember(member, id);
             ExtractImplementations(type);
+            ExtractDependencies(type, id);
             if (IsController(type)) ExtractActions(td, type);
+        }
+
+        /// What dependency injection must supply to create this class: the parameters of the constructor
+        /// it would use (the longest public one). Recorded in the file that declares that constructor.
+        void ExtractDependencies(INamedTypeSymbol type, string typeId)
+        {
+            if (type.TypeKind != TypeKind.Class || type.IsAbstract || type.IsStatic) return;
+
+            var ctors = type.InstanceConstructors.Where(c => c.DeclaredAccessibility == Accessibility.Public).ToList();
+            if (ctors.Count == 0) return;
+            var longest = ctors.OrderByDescending(c => c.Parameters.Length).First();
+            if (longest.Parameters.Length == 0) return;
+            if (longest.DeclaringSyntaxReferences.FirstOrDefault()?.SyntaxTree is { } tree && tree != Model.SyntaxTree) return;
+
+            foreach (var p in longest.Parameters)
+            {
+                if (DependencyOf(p.Type) is not { } dep || Sym.Id(dep.Service) is not { } serviceId || serviceId == typeId) continue;
+                var line = p.Locations.FirstOrDefault()?.GetLineSpan().StartLinePosition.Line + 1 ?? 0;
+                Facts.Dependencies.Add(new DependencyFact(
+                    typeId, serviceId, dep.Service.ToDisplayString(ShortType), dep.Wrapper,
+                    ctors.Count > 1 || p.HasExplicitDefaultValue || p.NullableAnnotation == NullableAnnotation.Annotated, line));
+            }
+        }
+
+        /// Handler parameters that may be services. Interfaces, abstract classes and [FromServices] parameters
+        /// must be registered. A plain class is a service only when it is registered, and is read from the
+        /// request body otherwise, so it never counts as missing.
+        public void AddEndpointDependencies(string endpointKey, IEnumerable<IParameterSymbol> parameters)
+        {
+            foreach (var p in parameters)
+            {
+                var fromServices = Sym.HasAttr(p, "FromServices") || Sym.HasAttr(p, "FromKeyedServices");
+                if (DependencyOf(p.Type) is not { } dep || Sym.Id(dep.Service) is not { } serviceId) continue;
+                var mustBeRegistered = fromServices || dep.Wrapper != "" || IsServiceLike(dep.Service);
+                var line = p.Locations.FirstOrDefault()?.GetLineSpan().StartLinePosition.Line + 1 ?? 0;
+                Facts.Dependencies.Add(new DependencyFact(
+                    endpointKey, serviceId, dep.Service.ToDisplayString(ShortType), dep.Wrapper,
+                    p.HasExplicitDefaultValue || !mustBeRegistered, line));
+            }
         }
 
         void ExtractMember(MemberDeclarationSyntax member, string typeId)
@@ -362,9 +466,12 @@ internal static partial class Extractor
                                  .Replace("[action]", ms.Name, StringComparison.OrdinalIgnoreCase)
                                  .Replace("[area]", area ?? "", StringComparison.OrdinalIgnoreCase);
 
+                    var key = $"{memberId}#{verb}#{route}";
                     Facts.Endpoints.Add(new EndpointFact(
-                        $"{memberId}#{verb}#{route}", verb, route, "", null, "controller", memberId, null, memberId,
-                        auth, null, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1));
+                        key, verb, route, "", null, "controller", memberId, null, memberId,
+                        auth, null, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1,
+                        Requests.Shape(ms.Parameters, route)));
+                    AddEndpointDependencies(key, ms.Parameters);
                 }
             }
         }
@@ -438,8 +545,18 @@ internal static partial class Extractor
             var name = InvokedName(node.Expression);
             var method = Invoked(node);
 
+            // Calls the compiler could not bind: a sign of missing packages. Dynamic calls are unbound on purpose.
+            if (method is null && name != "nameof" && _p.Model.GetTypeInfo(node, _p.Ct).Type?.TypeKind != TypeKind.Dynamic)
+                _p.Facts.Unresolved++;
+
             if (name is not null)
             {
+                if (Blind.TryGetValue(name, out var blind))
+                {
+                    var def = method is null ? null : (method.ReducedFrom ?? method).OriginalDefinition;
+                    if (def is null ? !blind.Strict : !Sym.IsSource(def))
+                        _p.Facts.Coverage.Add(new CoverageFact(blind.Kind, blind.Label, LineOf(node), _owner));
+                }
                 if (MapVerbs.ContainsKey(name) && TryEndpoint(node, name, method)) return;
                 if (IsDiMethod(name)) TryRegistration(node, name, method);
             }
@@ -521,7 +638,15 @@ internal static partial class Extractor
             }
 
             var owner = def.ContainingType;
-            if (owner?.Name is "HttpClient" or "HttpClientJsonExtensions" or "HttpMessageInvoker")
+            if (LookupNames.Contains(def.Name))
+            {
+                RecordLookup(node, method, line);
+            }
+            else if (owner?.Name == "Activator" && def.Name == "CreateInstance")
+            {
+                _p.Facts.Coverage.Add(new CoverageFact("reflection", "Objects created with Activator.CreateInstance", line, _owner));
+            }
+            else if (owner?.Name is "HttpClient" or "HttpClientJsonExtensions" or "HttpMessageInvoker")
             {
                 _p.Facts.Refs.Add(new RefFact(_owner, "ext:http", "http", line, def.Name));
             }
@@ -533,6 +658,23 @@ internal static partial class Extractor
             {
                 _p.Facts.Refs.Add(new RefFact(_owner, DbContextOf(node), "db", line, method.TypeArguments[0].Name));
             }
+        }
+
+        /// sp.GetRequiredService<IFoo>() and sp.GetService(typeof(IFoo)) ask for IFoo; a Type worked out
+        /// at run time cannot be followed.
+        void RecordLookup(InvocationExpressionSyntax node, IMethodSymbol method, int line)
+        {
+            var target = method.TypeArguments.Length == 1 ? method.TypeArguments[0] : null;
+            if (target is null && node.ArgumentList.Arguments.FirstOrDefault()?.Expression is TypeOfExpressionSyntax typeOf)
+                target = _p.Model.GetTypeInfo(typeOf.Type, _p.Ct).Type;
+
+            if (target is null || target is ITypeParameterSymbol)
+            {
+                _p.Facts.Coverage.Add(new CoverageFact("reflection", "Services looked up by a type worked out at run time", line, _owner));
+                return;
+            }
+            foreach (var t in Sym.SourceTypesIn(target))
+                if (Sym.Id(t) is { } id) _p.Facts.Refs.Add(new RefFact(_owner, id, "lookup", line));
         }
 
         /// The solution's DbContext class behind a call like db.SaveChanges(), or a generic database node.
@@ -664,6 +806,7 @@ internal static partial class Extractor
             var key = ordinal == 0 ? keyBase : $"{keyBase}#{ordinal}";
             var declaredIn = _owner;
             string? handlerId = null;
+            IReadOnlyList<IParameterSymbol>? handlerParams = null;
 
             if (receiver is not null) Visit(receiver);
             foreach (var a in args)
@@ -673,6 +816,7 @@ internal static partial class Extractor
             {
                 // Code inside the lambda belongs to the endpoint, not to the method that maps it.
                 AddLambdaParameters(lambda, key);
+                handlerParams = (_p.Model.GetSymbolInfo(lambda, _p.Ct).Symbol as IMethodSymbol)?.Parameters;
                 _owner = key;
                 Visit(lambda);
                 _owner = declaredIn;
@@ -681,14 +825,22 @@ internal static partial class Extractor
             {
                 var info = _p.Model.GetSymbolInfo(handler, _p.Ct);
                 if ((info.Symbol ?? info.CandidateSymbols.FirstOrDefault()) is IMethodSymbol target && Sym.IsSource(target))
+                {
                     handlerId = Sym.Id(target);
+                    handlerParams = target.Parameters;
+                }
                 else
+                {
                     Visit(handler);
+                }
             }
+
+            if (handlerParams is not null) _p.AddEndpointDependencies(key, handlerParams);
+            var request = handlerParams is null || style is "hub" or "grpc" or "health" ? null : Requests.Shape(handlerParams, pattern);
 
             _p.Facts.Endpoints.Add(new EndpointFact(
                 key, verb, pattern, prefix, param, style, handlerId, targetType, declaredIn, auth, routeName,
-                span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1));
+                span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1, request));
             return true;
         }
 

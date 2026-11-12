@@ -3,7 +3,7 @@ namespace Co.Revington.Sightline.Analysis;
 /// Turns per-file facts into one graph: nodes, edges and the DI service list.
 internal static class GraphBuilder
 {
-    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts)
+    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts, CheckOptions? checks = null)
     {
         var g = new Graph();
         var docs = docFacts
@@ -35,6 +35,7 @@ internal static class GraphBuilder
         AddRefs(g, docs, endpoints, handlers, services, implementations);
         AddTypeLinks(g, docs);
         AddServices(g, docs);
+        (g.Problems, g.Coverage) = Checks.Run(g, docs, projects, endpoints, checks ?? CheckOptions.None);
         return g;
     }
 
@@ -159,6 +160,7 @@ internal static class GraphBuilder
                 if (ep.HandlerId is not null && g.Has(ep.HandlerId)) meta["handler"] = ep.HandlerId;
                 if (ep.TargetTypeId is not null && g.Has(ep.TargetTypeId)) meta["target"] = ep.TargetTypeId;
                 if (g.Has(ep.Owner)) meta["declaredIn"] = ep.Owner;
+                if (ep.Request is not null) meta["request"] = Requests.ForRoute(ep.Request, route);
 
                 g.Add(new Node
                 {
@@ -241,6 +243,10 @@ internal static class GraphBuilder
 
                     case "ctor-param":
                         if (g.Has(r.To)) g.Link(Injectable(r.To) ? "injects" : "references", from, r.To, file: d.File, line: r.Line);
+                        break;
+
+                    case "lookup":
+                        if (g.Has(r.To)) g.Link("injects", from, r.To, "looked up", d.File, r.Line);
                         break;
                 }
             }

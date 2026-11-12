@@ -33,7 +33,23 @@ internal sealed record GroupPass(string MethodId, int Ordinal, string Prefix, Pa
 internal sealed record EndpointFact(
     string Key, string Verb, string Pattern, string Prefix, ParamRef? Param, string Style,
     string? HandlerId, string? TargetTypeId, string Owner, bool Auth, string? RouteName,
-    int Line, int EndLine);
+    int Line, int EndLine, RequestShape? Request = null);
+
+/// What a request to an endpoint carries, worked out from the handler's parameters.
+/// In: "route", "query", "header" or "body". Sample: a value to start from, as JSON text.
+internal sealed record RequestParam(string Name, string In, string Type, string Sample);
+
+internal sealed record RequestShape(IReadOnlyList<RequestParam> Params, string? BodyType, string? BodySample);
+
+/// A service that a class (or an endpoint) receives from dependency injection.
+/// Consumer: the type, or the endpoint key for minimal API handlers.
+/// Wrapper says how it is asked for: "" directly, or "enumerable", "options", "options-scoped", "lazy", "func".
+/// Optional: the parameter has a default value, or the class has several constructors to choose from.
+internal sealed record DependencyFact(string Consumer, string ServiceId, string ServiceName, string Wrapper, bool Optional, int Line);
+
+/// Something in the code that Sightline sees but cannot follow, such as services registered by
+/// scanning assemblies. Kind: "scan", "reflection", "endpoints". Owner: the member it was found in.
+internal sealed record CoverageFact(string Kind, string Label, int Line, string Owner);
 
 internal sealed class DocFacts
 {
@@ -48,6 +64,11 @@ internal sealed class DocFacts
     public List<DiFact> Di { get; } = [];
     public List<EndpointFact> Endpoints { get; } = [];
     public List<GroupPass> GroupPasses { get; } = [];
+    public List<DependencyFact> Dependencies { get; } = [];
+    public List<CoverageFact> Coverage { get; } = [];
+
+    /// Calls the compiler could not bind, usually because a package is missing.
+    public int Unresolved { get; set; }
 
     /// Changes only when declarations change, not method bodies.
     public string DeclHash { get; set; } = "";
