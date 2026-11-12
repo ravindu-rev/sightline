@@ -119,9 +119,11 @@ async function findOpen(folder) {
   return null;
 }
 
-/** The command that starts Sightline here: the setting, the repository's pinned tool, or dnx. */
+/** The command that starts Sightline here: the user's setting, the repository's pinned tool, or dnx. */
 function command(folder) {
-  const setting = vscode.workspace.getConfiguration('sightline').get('command')?.trim();
+  // Only the user's own settings count, so a repository's .vscode/settings.json cannot pick the program to run.
+  const value = vscode.workspace.getConfiguration('sightline').inspect('command')?.globalValue;
+  const setting = typeof value === 'string' ? value.trim() : '';
   if (setting) {
     const parts = setting.match(/"[^"]*"|\S+/g).map((p) => p.replace(/^"|"$/g, ''));
     return { file: parts[0], args: parts.slice(1) };

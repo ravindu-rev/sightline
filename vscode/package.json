@@ -37,6 +37,13 @@
     "workspaceContains:**/*.csproj"
   ],
   "main": "./extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Sightline reads the solution with MSBuild and restores its packages, which runs code from the repository, so it works in trusted folders only."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {
@@ -92,7 +99,8 @@
         "sightline.command": {
           "type": "string",
           "default": "",
-          "markdownDescription": "How to start Sightline, for example `sightline` for a global install. Empty: the repository's own tool (`dotnet sightline`) when `sightline init` pinned it, otherwise `dnx Co.Revington.Sightline`."
+          "scope": "machine",
+          "markdownDescription": "How to start Sightline, for example `sightline` for a global install. Empty: the repository's own tool (`dotnet sightline`) when `sightline init` pinned it, otherwise `dnx Co.Revington.Sightline`. Read from your user settings only, so a repository cannot choose the program."
         },
         "sightline.problems": {
           "type": "boolean",
