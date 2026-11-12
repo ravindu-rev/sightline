@@ -10,7 +10,8 @@
 #
 # A higher <VersionPrefix> in src/Directory.Build.props wins. Set it to 1.0.0 to go stable.
 #
-# A push is released only when something under src/ changed since the last tag.
+# A push is released only when something under src/ or vscode/ (the extension, released with
+# the same version) changed since the last tag.
 # Starting the workflow by hand releases regardless.
 #
 # The release notes group commits by type. ci, test, chore, docs, build and style commits
@@ -45,7 +46,7 @@ if [ -z "$last" ]; then
   changed=true
 else
   range="$last..HEAD"
-  if git diff --quiet "$last" HEAD -- src; then changed=false; else changed=true; fi
+  if git diff --quiet "$last" HEAD -- src vscode; then changed=false; else changed=true; fi
 
   IFS=. read -r major minor patch <<< "${last#v}"
   messages=$(git log "$range" --format='%s%n%b')
@@ -73,7 +74,7 @@ release=true
 reason=""
 if [ "$changed" = false ] && [ "${MANUAL:-false}" != true ]; then
   release=false
-  reason="Nothing under src/ changed since $last, so there is nothing new to publish."
+  reason="Nothing under src/ or vscode/ changed since $last, so there is nothing new to publish."
 elif [ -z "${NUGET_USER:-}" ]; then
   release=false
   reason="NuGet publishing is not set up yet: the repository variable NUGET_USER is empty. See 'Releasing' in README.md."

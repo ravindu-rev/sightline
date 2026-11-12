@@ -244,7 +244,7 @@ dotnet test                                                               # end-
 
 ## Releasing
 
-Releases are automatic. Every push to `master` is built and tested by `.github/workflows/release.yml`. If code under `src/` changed, a second job then:
+Releases are automatic. Every push to `master` is built and tested by `.github/workflows/release.yml`. If code under `src/` or `vscode/` changed, a second job then:
 
 1. works out the next version from the commit messages since the last release
 2. publishes both NuGet packages to nuget.org from the GitHub environment `production`
