@@ -61,6 +61,42 @@ public sealed partial class HostingPackageTests(HostingFixture hosting) : IClass
     }
 
     [Fact]
+    public async Task Under_dotnet_watch_the_map_stays_open_through_hot_reload()
+    {
+        var original = await File.ReadAllTextAsync(hosting.ProgramFile);
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var watch = hosting.Watch();
+        try
+        {
+            var line = await watch.WaitForLineAsync("Sightline: ", TimeSpan.FromMinutes(3));
+            var map = MapAddress().Match(line).Value;
+            var home = $"http://127.0.0.1:{watch.Port}/";
+            await EventuallyAsync(() => TryGetAsync(http, home), s => s == "hello");
+
+            // An edit is applied to the running app; the map beside it stays where it is.
+            await File.WriteAllTextAsync(hosting.ProgramFile, original.Replace("\"hello\"", "\"hello again\""));
+            await EventuallyAsync(() => TryGetAsync(http, home), s => s == "hello again", TimeSpan.FromMinutes(2));
+            Assert.True(await RespondsAsync(http, map), "The map closed while dotnet watch applied the edit.");
+        }
+        finally
+        {
+            await File.WriteAllTextAsync(hosting.ProgramFile, original);
+        }
+    }
+
+    static async Task<string> TryGetAsync(HttpClient http, string url)
+    {
+        try
+        {
+            return await http.GetStringAsync(url);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return "";        // restarting
+        }
+    }
+
+    [Fact]
     public async Task A_release_build_gets_nothing()
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
@@ -73,14 +109,14 @@ public sealed partial class HostingPackageTests(HostingFixture hosting) : IClass
     }
 
     /// Asks again until the answer satisfies the condition: the app reports a moment after it starts.
-    static async Task<string> EventuallyAsync(Func<Task<string>> ask, Func<string, bool> condition)
+    static async Task<string> EventuallyAsync(Func<Task<string>> ask, Func<string, bool> condition, TimeSpan? limit = null)
     {
         var waited = Stopwatch.StartNew();
         while (true)
         {
             var answer = await ask();
             if (condition(answer)) return answer;
-            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(30), "The map did not receive the report in time. Last answer: " + answer);
+            Assert.True(waited.Elapsed < (limit ?? TimeSpan.FromSeconds(30)), "The expected answer did not come in time. Last answer: " + answer);
             await Task.Delay(300);
         }
     }
@@ -116,6 +152,7 @@ public sealed class HostingFixture : IAsyncLifetime
 
     string Packages => Path.Combine(_dir, "packages");
     string AppDir => Path.Combine(_dir, "app");
+    public string ProgramFile => Path.Combine(AppDir, "Program.cs");
 
     public string StrictBuildOutput { get; private set; } = "";
 
@@ -199,6 +236,30 @@ public sealed class HostingFixture : IAsyncLifetime
         return app;
     }
 
+    /// Runs the app under "dotnet watch", the way many developers work: edits are hot-reloaded into it.
+    public RunningApp Watch()
+    {
+        var port = FreePort();
+        var info = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = AppDir,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var arg in new[] { "watch", "run", "--non-interactive", "--no-launch-profile" }) info.ArgumentList.Add(arg);
+        info.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+        info.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}";
+        info.Environment["NUGET_PACKAGES"] = Packages;
+        info.Environment["DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER"] = "1";
+        info.Environment["DOTNET_NOLOGO"] = "1";
+        foreach (var name in new[] { "CI", "GITHUB_ACTIONS", "TF_BUILD" }) info.Environment.Remove(name);
+
+        var app = new RunningApp(Process.Start(info)!, port, wholeTree: true);
+        _apps.Add(app);
+        return app;
+    }
+
     async Task<string> DotnetAsync(string dir, params string[] args)
     {
         var info = new ProcessStartInfo("dotnet")
@@ -233,12 +294,15 @@ public sealed class HostingFixture : IAsyncLifetime
 public sealed class RunningApp : IDisposable
 {
     readonly Process _process;
+    readonly bool _wholeTree;
     readonly ConcurrentQueue<string> _lines = new();
     readonly TaskCompletionSource _outputEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public RunningApp(Process process, int port)
+    /// wholeTree: stopping it stops everything it started (dotnet watch, the app, and the map beside it).
+    public RunningApp(Process process, int port, bool wholeTree = false)
     {
         _process = process;
+        _wholeTree = wholeTree;
         Port = port;
         process.OutputDataReceived += (_, e) =>
         {
@@ -281,7 +345,7 @@ public sealed class RunningApp : IDisposable
     {
         try
         {
-            if (!_process.HasExited) _process.Kill();
+            if (!_process.HasExited) _process.Kill(_wholeTree);
         }
         catch (InvalidOperationException)
         {
