@@ -10,6 +10,8 @@ A live, editable map of a .NET solution. It reads your code with Roslyn and show
 
 The map redraws while you edit. Code can be changed in the page itself or in your own editor.
 
+**[Try the live demo at sightline.revington.co](https://sightline.revington.co/)**. It runs in the browser; nothing to install.
+
 ## Install
 
 Requires the .NET 10 SDK or newer.
@@ -38,7 +40,7 @@ Options: `--port <n>`, `--no-open`, `--help`.
 | --- | --- | --- |
 | Map | Projects as zones, types listed per namespace. Hover or select a type to see its lines. | What is in this solution? Which project uses which? |
 | Flow | Every step behind an endpoint or method, numbered in source order. Interface calls continue in the registered implementation. | What happens when this endpoint is hit? Who ends up calling this method? |
-| Focus | One type with what it depends on (right) and what uses it (left). | What breaks if I change this class? |
+| Focus | One type in the middle, between what uses it and what it depends on. | What breaks if I change this class? |
 
 The left panel lists endpoints, services, types and projects. The right panel shows details of the selection and its source code.
 
@@ -73,6 +75,7 @@ dotnet test                                                               # end-
 - `src/Co.Revington.Sightline/Analysis` loads the solution through MSBuild, then extracts facts per file: declarations, calls, DI registrations, endpoints.
 - `src/Co.Revington.Sightline/Live` watches the folder. A changed file is re-read alone, the graph is rebuilt, and only the difference is pushed to the browser.
 - `src/Co.Revington.Sightline/wwwroot` is the page: plain JavaScript modules, ELK for layout, CodeMirror for the editor. No build step. Add `--ui src/Co.Revington.Sightline/wwwroot` when running to serve these files straight from source.
+- `site/` is the website. `node site/generate.mjs --serve` builds it into `_site/` and previews it at `localhost:4173`. The demo on the site is the tool's own page, fed by a recording that the script takes from the real tool running on `samples/Shop`, so it cannot drift from the product. `.github/workflows/website.yml` publishes the site to GitHub Pages after every successful run of the release workflow.
 
 ## Releasing
 

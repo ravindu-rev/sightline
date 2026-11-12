@@ -1,0 +1,55 @@
+name: Website
+
+# Builds the website (landing page and live demo) and publishes it to GitHub Pages.
+# It runs after each Release run that succeeded, so the site always shows tested code
+# and the newest released version. It can also be started by hand from the Actions tab.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time. A newer one waits for the running one to finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write        # publish to GitHub Pages
+      id-token: write     # lets GitHub Pages check that the upload comes from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # tags: the page shows the latest released version
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # The demo on the site is recorded from the real tool running on the sample solution.
+      - name: Build the site
+        run: |
+          dotnet restore samples/Shop/Shop.sln
+          node site/generate.mjs --out _site
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

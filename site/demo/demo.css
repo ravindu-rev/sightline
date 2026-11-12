@@ -1,0 +1,32 @@
+/* Additions for the website demo. Uses the tool's own colour and font variables from app.css. */
+
+/* There is no local editor to open from a website. */
+#ed-open { display: none !important; }
+
+/* Notice bar across the top, only when the demo is opened on its own page. */
+.demo-bar {
+  display: flex; align-items: center; gap: 14px; height: 34px; padding: 0 14px;
+  background: var(--ink); color: var(--panel); font: 13px var(--font-ui); white-space: nowrap; overflow: hidden;
+}
+.demo-bar span { overflow: hidden; text-overflow: ellipsis; }
+.demo-bar a { flex: none; color: inherit; font-weight: 600; }
+html.embedded .demo-bar { display: none; }
+html:not(.embedded) #app { height: calc(100vh - 34px); }
+
+@media (max-width: 980px) {
+  html:not(.embedded) #app { height: auto; }
+  .demo-bar { height: auto; padding: 8px 14px; white-space: normal; }
+}
+
+/* Short messages from the demo itself, for example "new edits are not analyzed here". */
+.demo-toast {
+  position: fixed; z-index: 50; right: 14px; bottom: 44px; max-width: 380px; padding: 10px 14px;
+  border-radius: 8px; background: var(--ink); color: var(--panel); font: 13px/1.45 var(--font-ui);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .25); pointer-events: none;
+  opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s;
+}
+.demo-toast.on { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-toast { transition: none; }
+}

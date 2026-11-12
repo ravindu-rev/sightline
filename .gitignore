@@ -5,6 +5,9 @@ artifacts/
 nupkg/
 TestResults/
 
+# website output of site/generate.mjs
+_site/
+
 # written by .github/scripts/plan-release.sh
 release-notes.md
 
