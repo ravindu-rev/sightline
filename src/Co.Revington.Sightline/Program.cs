@@ -5,36 +5,47 @@ using System.Security.Cryptography;
 using Co.Revington.Sightline;
 using Co.Revington.Sightline.Live;
 using Co.Revington.Sightline.Server;
+using Co.Revington.Sightline.Setup;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 
-var options = CliOptions.Parse(args);
-if (options is null) return 1;
-
-var port = FindFreePort(options.Port);
-var token = options.Token ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-var hub = new EventHub();
-var session = new LiveSession(options.Target, hub);
-var app = WebApp.Build(session, hub, port, token, options.UiDir);
-
-await app.StartAsync();
-
-var url = $"http://localhost:{port}";
-Console.WriteLine("Sightline");
-Console.WriteLine($"  target  {options.Target}");
-Console.WriteLine($"  url     {url}");
-
-var loop = Task.Run(() => session.RunAsync(app.Lifetime.ApplicationStopping));
-
-if (options.Open)
+return Cli.Parse(args) switch
 {
-    try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-    catch { /* no browser available: the URL is printed above */ }
-}
+    ExitCommand exit => exit.Code,
+    InitCommand init => await Init.RunAsync(init.Options),
+    MapCommand map => await OpenMapAsync(map.Options),
+    _ => 1,
+};
 
-await app.WaitForShutdownAsync();
-await loop;
-return 0;
+static async Task<int> OpenMapAsync(MapOptions options)
+{
+    var port = FindFreePort(options.Port);
+    var token = options.Token ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+    var hub = new EventHub();
+    var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore));
+    var app = WebApp.Build(session, hub, port, token, options.UiDir);
+
+    await app.StartAsync();
+
+    var url = $"http://localhost:{port}";
+    Console.WriteLine($"Sightline {ToolInfo.Version}");
+    Console.WriteLine($"  target  {options.Target}");
+    if (options.Config is not null) Console.WriteLine($"  config  {options.Config.File}");
+    Console.WriteLine($"  url     {url}");
+    if (options.Config is null) Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on the solution");
+
+    var loop = Task.Run(() => session.RunAsync(app.Lifetime.ApplicationStopping));
+
+    if (options.Open)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* no browser available: the URL is printed above */ }
+    }
+
+    await app.WaitForShutdownAsync();
+    await loop;
+    return 0;
+}
 
 static int FindFreePort(int preferred)
 {

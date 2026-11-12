@@ -81,7 +81,7 @@ public sealed class ShopFixture : IAsyncLifetime
         }
     }
 
-    static string FindRepoRoot()
+    internal static string FindRepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
             if (File.Exists(Path.Combine(dir.FullName, "Co.Revington.Sightline.sln"))) return dir.FullName;

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Co.Revington.Sightline.Analysis;
+using Co.Revington.Sightline.Settings;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
@@ -20,12 +21,23 @@ internal sealed record OverlayWork(string Path, string? Text, bool Saved = false
 
 internal sealed record StatusInfo(string State, string Message);
 
+/// Filter: projects to leave off the map. Restore: run "dotnet restore" for projects that were never restored.
+internal sealed record LoadOptions(ProjectFilter Filter, bool Restore)
+{
+    public static readonly LoadOptions Default = new(ProjectFilter.None, Restore: true);
+}
+
 /// Owns the loaded solution and keeps the graph in step with edits.
 /// All changes run on one loop, so state never needs fine-grained locking.
 internal sealed class LiveSession
 {
+    static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", ".git", ".vs", ".idea", "node_modules" };
+
     readonly string _target;
     readonly EventHub _hub;
+    readonly LoadOptions _options;
+    readonly HashSet<string> _restoreTried = new(StringComparer.OrdinalIgnoreCase);
+    readonly List<string> _restoreProblems = [];
     readonly Channel<Work> _queue = Channel.CreateUnbounded<Work>(new UnboundedChannelOptions { SingleReader = true });
     readonly object _gate = new();
     readonly Timer _reloadTimer;
@@ -45,10 +57,11 @@ internal sealed class LiveSession
     volatile Snapshot _snapshot = Snapshot.Empty;
     volatile StatusInfo _status = new("loading", "Starting");
 
-    public LiveSession(string target, EventHub hub)
+    public LiveSession(string target, EventHub hub, LoadOptions? options = null)
     {
         _target = target;
         _hub = hub;
+        _options = options ?? LoadOptions.Default;
         RootDir = Directory.Exists(target) ? target : Path.GetDirectoryName(target)!;
         Name = Directory.Exists(target) ? new DirectoryInfo(target).Name : Path.GetFileName(target);
         _reloadTimer = new Timer(_ => Enqueue(new ReloadWork()), null, Timeout.Infinite, Timeout.Infinite);
@@ -183,18 +196,23 @@ internal sealed class LiveSession
     async Task LoadAsync(CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        if (_options.Restore) await RestoreMissingAsync(ct);
         SetStatus("loading", "Opening " + Name);
 
         var ws = MSBuildWorkspace.Create();
         ws.SkipUnrecognizedProjects = true;
         var progress = new DirectProgress(p => SetStatus("loading", $"{p.Operation} {Path.GetFileName(p.FilePath)}"));
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         Solution solution;
         if (Directory.Exists(_target))
         {
-            foreach (var csproj in Directory.EnumerateFiles(_target, "*.csproj", SearchOption.AllDirectories).Where(p => !InBuildOutput(p)).Order())
-                if (!ws.CurrentSolution.Projects.Any(p => SamePath(p.FilePath ?? "", csproj)))
+            foreach (var csproj in FindProjects(_target).Order())
+            {
+                if (_options.Filter.Excludes(csproj)) excluded.Add(csproj);
+                else if (!ws.CurrentSolution.Projects.Any(p => SamePath(p.FilePath ?? "", csproj)))
                     await ws.OpenProjectAsync(csproj, progress, ct);
+            }
             solution = ws.CurrentSolution;
         }
         else if (_target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || _target.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
@@ -206,9 +224,15 @@ internal sealed class LiveSession
             solution = (await ws.OpenProjectAsync(_target, progress, ct)).Solution;
         }
 
+        // Projects listed in "exclude" still load when others reference them (their types are needed
+        // to understand the code that uses them), but they stay off the map.
+        var csharp = solution.Projects.Where(p => p.Language == LanguageNames.CSharp && p.FilePath is not null).ToList();
+        foreach (var p in csharp)
+            if (_options.Filter.Excludes(p.FilePath!)) excluded.Add(p.FilePath!);
+
         // One project per csproj: multi-targeted projects load once per framework.
-        var chosen = solution.Projects
-            .Where(p => p.Language == LanguageNames.CSharp && p.FilePath is not null)
+        var chosen = csharp
+            .Where(p => !excluded.Contains(p.FilePath!))
             .GroupBy(p => p.FilePath!, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .OrderBy(p => p.FilePath, StringComparer.OrdinalIgnoreCase)
@@ -245,7 +269,7 @@ internal sealed class LiveSession
             _solution = solution;
             _projects = projects;
             _projectNodeIds = projectNodeIds;
-            _diagnostics = ws.Diagnostics.Select(d => $"{d.Kind}: {d.Message}").Distinct().Take(50).ToList();
+            _diagnostics = _restoreProblems.Concat(ws.Diagnostics.Select(d => $"{d.Kind}: {d.Message}")).Distinct().Take(50).ToList();
 
             _facts.Clear();
             _tracked.Clear();
@@ -268,7 +292,8 @@ internal sealed class LiveSession
         _hub.Publish("reload", $"{{\"version\":{_snapshot.Version}}}");
 
         var count = (string kind) => graph.Nodes.Values.Count(n => n.Kind == kind);
-        SetStatus("ready", $"{count("project")} projects, {count("type")} types, {count("endpoint")} endpoints in {sw.Elapsed.TotalSeconds:0.0}s");
+        var left = excluded.Count == 0 ? "" : $", {excluded.Count} left out by {SightlineConfig.FileName}";
+        SetStatus("ready", $"{count("project")} projects, {count("type")} types, {count("endpoint")} endpoints in {sw.Elapsed.TotalSeconds:0.0}s{left}");
 
         _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
     }
@@ -278,6 +303,52 @@ internal sealed class LiveSession
         MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount - 1),
         CancellationToken = ct,
     };
+
+    /// Project files under a folder, without walking into build output or tool folders.
+    internal static IEnumerable<string> FindProjects(string root)
+    {
+        var pending = new Stack<string>([root]);
+        while (pending.TryPop(out var dir))
+        {
+            string[] files, dirs;
+            try
+            {
+                files = Directory.GetFiles(dir, "*.csproj");
+                dirs = Directory.GetDirectories(dir);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                continue;
+            }
+            foreach (var file in files) yield return file;
+            foreach (var sub in dirs)
+                if (!SkipDirs.Contains(Path.GetFileName(sub))) pending.Push(sub);
+        }
+    }
+
+    /// The analysis needs each project's NuGet packages, which exist only after a restore.
+    /// Like "dotnet build", restore the projects that never were, so a fresh clone just works.
+    async Task RestoreMissingAsync(CancellationToken ct)
+    {
+        var missing = FindProjects(RootDir)
+            .Where(p => !_options.Filter.Excludes(p) && !_restoreTried.Contains(p))
+            .Where(p => !File.Exists(Path.Combine(Path.GetDirectoryName(p)!, "obj", "project.assets.json")))
+            .ToList();
+        if (missing.Count == 0) return;
+
+        // Each project is tried once per run: a feed that needs a login should not slow down every reload.
+        foreach (var p in missing) _restoreTried.Add(p);
+        SetStatus("loading", $"Restoring NuGet packages for {missing.Count} project{(missing.Count == 1 ? "" : "s")}");
+
+        // A solution or a single project restores in one go; a folder of projects restores one by one.
+        IReadOnlyList<string> targets = Directory.Exists(_target) ? missing : [_target];
+        foreach (var target in targets)
+        {
+            var result = await DotnetCli.RunAsync(RootDir, ["restore", target], ct);
+            if (result.Code != 0)
+                _restoreProblems.Add($"Warning: \"dotnet restore {Path.GetFileName(target)}\" failed, so some references may be missing. {DotnetCli.Tail(result.All, 2)}");
+        }
+    }
 
     static bool InBuildOutput(string path) =>
         path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
