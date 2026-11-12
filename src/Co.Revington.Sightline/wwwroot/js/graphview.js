@@ -10,7 +10,20 @@
 // Node html is built by models.js, which escapes all text taken from the analyzed code.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const elk = new ELK();
+
+// Layout runs in a web worker, so a big map never freezes the page. Where workers are not allowed,
+// ELK runs on the page itself, as before.
+const elk = (() => {
+  try {
+    const workerUrl = new URL('../lib/elk-worker.min.js', import.meta.url).href;
+    return new ELK({ workerFactory: () => new Worker(workerUrl) });
+  } catch {
+    return new ELK();
+  }
+})();
+
+// Above this many stations, one arrangement is laid out instead of trying several.
+const QUICK = 150;
 
 const LAYOUT = {
   'elk.algorithm': 'layered',
@@ -79,6 +92,15 @@ export class GraphView {
   async render(model, { fit = false } = {}) {
     const seq = ++this.seq;
     const fresh = model.key !== this.model.key;
+
+    // A live update that does not change what this view shows needs no new layout.
+    const signature = signatureOf(model);
+    if (!fresh && !fit && !this.wantFit && signature === this.signature) {
+      this.model = model;
+      this.#markSelection();
+      return;
+    }
+    this.signature = signature;
     this.model = model;
 
     // Remembered across renders: a newer render may replace this one before its layout is ready,
@@ -94,6 +116,7 @@ export class GraphView {
       layout = await this.#layout(model, sizes);
     } catch (err) {
       console.error('Sightline layout failed', err);
+      this.signature = null;
       return;
     }
     if (seq !== this.seq) return;            // a newer render took over while ELK was working
@@ -183,10 +206,12 @@ export class GraphView {
 
     const box = this.host.getBoundingClientRect();
     // The shape of a group only matters when there are groups to pack.
-    const options = model.nodes.some((n) => n.group)
+    let options = model.nodes.some((n) => n.group)
       ? [['RIGHT', 0.7], ['RIGHT', 1.8], ['DOWN', 1.8], ['DOWN', 3.4]]
       : [['RIGHT', 1.8], ['DOWN', 1.8]];
     const previous = this.choices.get(model.key);
+    // Big pictures get one arrangement: the one used before, or the first.
+    if (model.nodes.length > QUICK) options = [options.find(([d, a]) => d + a === previous) ?? options[0]];
 
     let best = null;
     for (const [direction, aspect] of options) {
@@ -470,7 +495,7 @@ export class GraphView {
 
     const padX = 28, padTop = 64, padBottom = 56;
     const k = Math.min(1.1, (box.width - padX * 2) / w, (box.height - padTop - padBottom) / h);
-    this.view.k = Math.max(0.15, k);
+    this.view.k = Math.max(0.05, k);
     this.view.x = (box.width - w * this.view.k) / 2;
     this.view.y = Math.max(padTop, (box.height - h * this.view.k) / 2);
     this.#applyView();
@@ -480,7 +505,7 @@ export class GraphView {
     const box = this.host.getBoundingClientRect();
     const px = (clientX ?? box.left + box.width / 2) - box.left;
     const py = (clientY ?? box.top + box.height / 2) - box.top;
-    const k = Math.min(2.5, Math.max(0.15, this.view.k * factor));
+    const k = Math.min(2.5, Math.max(0.05, this.view.k * factor));
     const f = k / this.view.k;
     this.view.x = px - (px - this.view.x) * f;
     this.view.y = py - (py - this.view.y) * f;
@@ -606,6 +631,14 @@ export class GraphView {
 }
 
 // -------------------------------------------------------------------- helpers
+
+/** What a layout depends on: the stations, their content and the lines between them. */
+function signatureOf(model) {
+  const parts = [model.key, model.direction, model.layerGap ?? ''];
+  for (const n of model.nodes) parts.push(n.id, n.parent ?? '', n.group ? 'g' : '', n.cls ?? '', n.zone ?? '', n.html);
+  for (const e of model.edges) parts.push(e.id, e.kind, e.label ?? '', e.step ?? '');
+  return parts.join('\u0001');
+}
 
 function div(cls) {
   const el = document.createElement('div');

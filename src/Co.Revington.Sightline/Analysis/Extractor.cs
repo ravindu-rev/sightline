@@ -95,9 +95,11 @@ internal static partial class Extractor
     [GeneratedRegex(@"^(TryAdd|Add)(Keyed)?(Scoped|Transient|Singleton)$")]
     private static partial Regex LifetimeMethod();
 
+    // AddDbContext, AddDbContextPool, AddPooledDbContextFactory, and Aspire's AddNpgsqlDbContext, AddSqlServerDbContext, ...
     static bool IsDiMethod(string name) =>
         LifetimeMethod().IsMatch(name) || name is "AddHostedService" or "AddHttpClient" or "Configure" or "AddOptions"
-        || name.StartsWith("AddDbContext", StringComparison.Ordinal) || name == "AddPooledDbContextFactory";
+        || name.StartsWith("AddDbContext", StringComparison.Ordinal) || name == "AddPooledDbContextFactory"
+        || (name.StartsWith("Add", StringComparison.Ordinal) && name.EndsWith("DbContext", StringComparison.Ordinal));
 
     // A DbContext added with AddDbContext, AddDbContextPool or AddDbContextFactory is itself a scoped service.
     static string Lifetime(string method) =>
@@ -458,7 +460,7 @@ internal static partial class Extractor
                     if (template is not null && (template.StartsWith('/') || template.StartsWith("~/", StringComparison.Ordinal)))
                         route = Routes.Join(template.TrimStart('~'));
                     else if (classRoute is null && template is null)
-                        route = Routes.Join(controller, ms.Name);          // conventional routing
+                        route = Routes.Join(area, controller, ms.Name);    // conventional routing: {area}/{controller}/{action}
                     else
                         route = Routes.Join(classRoute, template);
 
@@ -781,8 +783,11 @@ internal static partial class Extractor
                 case "MapMethods":
                     if (args.Count < 3) return false;
                     pattern = Const(args[0].Expression) ?? "?";
-                    var verbs = args[1].Expression.DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>()
-                        .Where(l => l.IsKind(SyntaxKind.StringLiteralExpression)).Select(l => l.Token.ValueText.ToUpperInvariant()).ToList();
+                    // ["GET", "HEAD"] or [HttpMethods.Options]: every element with a constant string value.
+                    var verbs = args[1].Expression.DescendantNodesAndSelf().OfType<ExpressionSyntax>()
+                        .Where(e => e is LiteralExpressionSyntax or MemberAccessExpressionSyntax or IdentifierNameSyntax)
+                        .Where(e => e.Parent is not MemberAccessExpressionSyntax { Name: var n } || n != e)
+                        .Select(Const).OfType<string>().Select(v => v.ToUpperInvariant()).Distinct().ToList();
                     if (verbs.Count > 0) verb = string.Join(",", verbs);
                     handler = args[2].Expression;
                     break;

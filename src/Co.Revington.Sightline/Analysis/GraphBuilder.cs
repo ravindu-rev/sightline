@@ -82,11 +82,39 @@ internal static class GraphBuilder
             g.Add(new Node { Id = p.Id, Kind = "project", Name = p.Name, File = p.Path, Meta = meta });
         }
 
+        var direct = DirectReferences(projects);
         foreach (var p in projects)
         {
-            foreach (var r in p.ProjectRefs) g.Link("projectRef", p.Id, r);
+            foreach (var r in direct[p.Id]) g.Link("projectRef", p.Id, r);
             foreach (var k in p.Packages.Where(k => k.Direct)) g.Link("packageRef", p.Id, "pkg:" + k.Name, k.Version);
         }
+    }
+
+    /// The compiler sees every project a project depends on, also through other projects. The map shows
+    /// the references that are not implied by others: A uses C directly only if no B on the way leads to C.
+    static Dictionary<string, List<string>> DirectReferences(IReadOnlyList<ProjectFacts> projects)
+    {
+        var refs = projects.ToDictionary(p => p.Id, p => p.ProjectRefs.Distinct().ToHashSet(), StringComparer.Ordinal);
+        var reach = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        HashSet<string> Reach(string id, HashSet<string> visiting)
+        {
+            if (reach.TryGetValue(id, out var known)) return known;
+            var all = new HashSet<string>(StringComparer.Ordinal);
+            if (!visiting.Add(id)) return all;           // a reference loop; MSBuild would not build it anyway
+            foreach (var r in refs.GetValueOrDefault(id) ?? [])
+            {
+                all.Add(r);
+                all.UnionWith(Reach(r, visiting));
+            }
+            visiting.Remove(id);
+            return reach[id] = all;
+        }
+
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (id, mine) in refs)
+            result[id] = mine.Where(c => !mine.Any(b => b != c && Reach(b, []).Contains(c))).Order(StringComparer.Ordinal).ToList();
+        return result;
     }
 
     static void AddTypes(Graph g, List<DocFacts> docs, HashSet<string> services,

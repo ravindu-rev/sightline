@@ -58,7 +58,8 @@ export class Sidebar {
     const rows = this[`_${this.tab}`]();
     const shown = rows.slice(0, MAX_ROWS);
     let html = shown.join('');
-    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : EMPTY[this.tab]}</p>`;
+    const failed = this.store.status.state === 'error' && !this.store.projects.length;
+    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : failed ? 'The solution did not load; the message is on the map.' : EMPTY[this.tab]}</p>`;
     else if (rows.length > MAX_ROWS) html += `<p class="none">${rows.length - MAX_ROWS} more. Type in the filter to narrow the list.</p>`;
     this.listEl.innerHTML = html;
     this.setCurrent(this.current);

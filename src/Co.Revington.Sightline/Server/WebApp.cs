@@ -95,7 +95,7 @@ internal static class WebApp
             await ctx.Response.WriteAsync(html.Replace("__SIGHTLINE_TOKEN__", token));
         });
 
-        app.MapGet("/api/graph", ctx => Json(ctx, session.Snapshot.ToJson(session.StatusJson)));
+        app.MapGet("/api/graph", ctx => Json(ctx, session.GraphJson()));
 
         // Cheap check for the page: 204 while this server runs, 401 when the page's token is from an earlier run.
         app.MapGet("/api/ping", ctx =>

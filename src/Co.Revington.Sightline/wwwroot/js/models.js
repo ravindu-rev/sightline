@@ -234,19 +234,27 @@ export function mapModel(store, st) {
     m.refs.push(e.id);
   };
 
+  // Lines between projects follow the references written in the project files. Code that uses a
+  // project it only reaches through another one adds to no line of its own; it shows when hovered.
+  // Drawing every such use as a line turns a big solution into a mesh.
+  const references = new Set();
+  for (const e of store.edges.values())
+    if (e.kind === 'projectRef' || e.kind === 'packageRef') references.add(e.source + ARROW + e.target);
+
   const between = new Map();          // project -> project: always drawn
-  const within = new Map();           // type-level: drawn for the hovered or selected node
+  const within = new Map();           // drawn for the hovered or selected node
   for (const e of store.edges.values()) {
     const isRef = e.kind === 'projectRef' || e.kind === 'packageRef';
     if (e.kind === 'registers' || (!isRef && !(e.kind in KIND_GROUP))) continue;
 
     const ps = projectOf(e.source), pt = projectOf(e.target);
-    if (ps && pt && ps !== pt) merge(between, ps, pt, e);
+    const direct = ps && pt && ps !== pt && references.has(ps + ARROW + pt);
+    if (direct) merge(between, ps, pt, e);
     if (isRef || !st.kinds.has(KIND_GROUP[e.kind])) continue;
 
     const s = repOf(e.source), t = repOf(e.target);
     if (!s || !t || s === t) continue;
-    if (collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
+    if (direct && collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
     merge(within, s, t, e);
   }
 
@@ -271,6 +279,10 @@ export function mapModel(store, st) {
 const STEP_KINDS = new Set(['handles', 'calls', 'dispatches', 'db', 'http']);
 const CALLER_KINDS = new Set(['handles', 'calls', 'dispatches']);
 
+// A flow stops growing at this many stations; the rest shows as "+N" on the stations where it stops.
+// Past this, a picture is unreadable anyway, and laying it out takes seconds.
+const FLOW_BUDGET = 160;
+
 export function flowModel(store, st) {
   const root = store.node(st.root);
   const nodes = new Map();
@@ -278,6 +290,7 @@ export function flowModel(store, st) {
   if (!root) return { key: 'flow:', direction: 'RIGHT', nodes: [], edges: [], rep: () => null };
 
   let truncated = 0;
+  const full = () => nodes.size >= FLOW_BUDGET;
   const notes = new Map();            // node id -> how the flow reaches it, shown inside the node
   const add = (id, spec) => { if (!nodes.has(id)) nodes.set(id, spec); };
   const link = (source, target, kind, extra = {}) => {
@@ -299,7 +312,7 @@ export function flowModel(store, st) {
 
     const steps = store.outOf(id, STEP_KINDS).slice().sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
     if (!steps.length) return;
-    if (depth >= st.depth) {
+    if (depth >= st.depth || full()) {
       truncated++;
       nodes.get(id).more = steps.length;
       return;
@@ -349,7 +362,7 @@ export function flowModel(store, st) {
       for (const e of store.intoOf(a.id, CALLER_KINDS)) callers.push({ e, via: store.node(a.parent)?.name ?? '' });
 
     if (!callers.length) return;
-    if (depth >= st.depth) {
+    if (depth >= st.depth || full()) {
       truncated++;
       nodes.get(id).more = callers.length;
       return;
