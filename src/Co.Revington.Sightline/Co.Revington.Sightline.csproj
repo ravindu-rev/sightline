@@ -16,6 +16,9 @@
   <PropertyGroup>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>sightline</ToolCommandName>
+    <!-- Also an MCP server ("sightline mcp"): nuget.org lists it among MCP servers, and reads how to start it
+         from .mcp/server.json in the package. DotnetTool stays first, so "dotnet tool install" and dnx work as before. -->
+    <PackageType>DotnetTool;McpServer</PackageType>
     <PackageId>Co.Revington.Sightline</PackageId>
     <Title>Sightline</Title>
     <Description>A live, editable map of a .NET solution. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
@@ -40,6 +43,19 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Co.Revington.Sightline.Tests" />
+    <None Remove="mcp-server.json" />
   </ItemGroup>
+
+  <!-- .mcp/server.json with the version of this package written in. -->
+  <Target Name="AddMcpServerJson" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <_McpServerJson>$(IntermediateOutputPath)server.json</_McpServerJson>
+      <_McpServerText>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/mcp-server.json').Replace('{version}', '$(PackageVersion)'))</_McpServerText>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_McpServerJson)" Lines="$(_McpServerText)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(_McpServerJson)" Pack="true" PackagePath=".mcp/" Visible="false" />
+    </ItemGroup>
+  </Target>
 
 </Project>
