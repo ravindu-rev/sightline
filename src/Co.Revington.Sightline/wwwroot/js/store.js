@@ -16,6 +16,8 @@ export class Store extends EventTarget {
     this.nodes = new Map(graph.nodes.map((n) => [n.id, n]));
     this.edges = new Map(graph.edges.map((e) => [e.id, e]));
     this.services = graph.services ?? [];
+    this.problems = graph.problems ?? [];
+    this.coverage = graph.coverage ?? [];
     this.#index();
     if (!silent) this.dispatchEvent(new CustomEvent('reset'));
   }
@@ -51,10 +53,13 @@ export class Store extends EventTarget {
     const servicesChanged = Boolean(p.services);
     if (p.services) this.services = p.services;
     if (p.info) this.info = p.info;
+    if (p.problems) this.problems = p.problems;
+    if (p.coverage) this.coverage = p.coverage;
     this.version = p.version;
 
     // Line-only shifts do not change the picture; views can skip a re-layout.
-    change.structural = servicesChanged || change.touched.size > 0 || change.removed.length > 0 || p.edges.changed.length > 0;
+    change.problems = Boolean(p.problems);
+    change.structural = servicesChanged || change.problems || change.touched.size > 0 || change.removed.length > 0 || p.edges.changed.length > 0;
 
     this.#index();
     this.dispatchEvent(new CustomEvent('patch', { detail: change }));
@@ -74,6 +79,24 @@ export class Store extends EventTarget {
 
     this.projects = [...this.nodes.values()].filter((n) => n.kind === 'project').sort(byName);
     this.zones = new Map(this.projects.map((p, i) => [p.id, i % 8]));
+
+    // Problems by the node they point at first, and by the type that holds a member.
+    this.problemIndex = new Map();
+    for (const p of this.problems ?? []) {
+      for (const id of new Set([p.nodes?.[0], this.nodes.get(p.nodes?.[0])?.parent].filter(Boolean))) push(this.problemIndex, id, p);
+    }
+  }
+
+  /** Problems that point at this node, worst first. */
+  problemsFor(id) {
+    return this.problemIndex.get(id) ?? [];
+  }
+
+  /** "error", "warning", "info" or "" for the worst problem at this node. */
+  severityOf(id) {
+    const list = this.problemsFor(id);
+    for (const level of ['error', 'warning', 'info']) if (list.some((p) => p.severity === level)) return level;
+    return '';
   }
 
   node(id) { return this.nodes.get(id); }

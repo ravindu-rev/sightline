@@ -3,13 +3,18 @@ namespace Co.Revington.Sightline.Analysis;
 /// Turns per-file facts into one graph: nodes, edges and the DI service list.
 internal static class GraphBuilder
 {
-    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts, CheckOptions? checks = null)
+    public static Graph Build(IReadOnlyList<ProjectFacts> projects, IEnumerable<DocFacts> docFacts, CheckOptions? checks = null,
+        IReadOnlyList<RuntimeApp>? runtime = null)
     {
         var g = new Graph();
         var docs = docFacts
             .OrderBy(d => d.File, StringComparer.OrdinalIgnoreCase)
             .ThenBy(d => d.Project, StringComparer.Ordinal)
             .ToList();
+
+        // Registrations only the running app knows about count like the ones read from the code.
+        var runtimeRegistrations = runtime is { Count: > 0 } ? RuntimeMerge.Registrations(runtime, docs, projects) : null;
+        if (runtimeRegistrations is not null) docs.Add(runtimeRegistrations);
 
         // DI registrations first: they label types and decide what counts as an injection.
         var services = new HashSet<string>(StringComparer.Ordinal);
@@ -32,10 +37,18 @@ internal static class GraphBuilder
             .ToDictionary(x => x.Key, x => x.Select(h => h.HandlerMemberId).Distinct().ToList());
 
         var endpoints = AddEndpoints(g, docs);
+        var runtimeEndpoints = runtime is { Count: > 0 } ? RuntimeMerge.Endpoints(g, runtime, projects) : 0;
         AddRefs(g, docs, endpoints, handlers, services, implementations);
         AddTypeLinks(g, docs);
         AddServices(g, docs);
         (g.Problems, g.Coverage) = Checks.Run(g, docs, projects, endpoints, checks ?? CheckOptions.None);
+
+        var runtimeServices = runtimeRegistrations?.Di.Count ?? 0;
+        if (runtimeEndpoints + runtimeServices > 0)
+            g.Coverage.Insert(0, new CoverageNote("runtime",
+                $"Found only in the running app: {runtimeEndpoints} endpoint{(runtimeEndpoints == 1 ? "" : "s")} and " +
+                $"{runtimeServices} registration{(runtimeServices == 1 ? "" : "s")} that reading the code missed",
+                runtimeEndpoints + runtimeServices, []));
         return g;
     }
 

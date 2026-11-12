@@ -26,8 +26,7 @@ internal sealed class SightlineConfig
     /// Layer rules and how serious each kind of problem is.
     public CheckOptions Checks { get; init; } = CheckOptions.None;
 
-    /// The editor that "Open in editor" starts: vscode, cursor, rider, visualstudio, or a command
-    /// with {file} and {line} in it.
+    /// The editor that "Open in editor" starts: vscode, cursor, rider or visualstudio.
     public string? Editor { get; init; }
 
     /// Settings that were ignored, worded for the console.
@@ -135,9 +134,11 @@ internal sealed class SightlineConfig
                         break;
 
                     case "editor":
-                        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
-                            throw Wrong("editor", "vscode, cursor, rider, visualstudio, or a command such as \"subl {file}:{line}\"");
-                        editor = value.GetString()!.Trim();
+                        // Only known editors: a cloned repository must not choose a program to run.
+                        // A command of your own goes in the SIGHTLINE_EDITOR environment variable instead.
+                        if (value.ValueKind != JsonValueKind.String || value.GetString()?.Trim().ToLowerInvariant() is not ("vscode" or "cursor" or "rider" or "visualstudio"))
+                            throw Wrong("editor", "vscode, cursor, rider or visualstudio (a command of your own goes in the SIGHTLINE_EDITOR environment variable)");
+                        editor = value.GetString()!.Trim().ToLowerInvariant();
                         break;
 
                     default:

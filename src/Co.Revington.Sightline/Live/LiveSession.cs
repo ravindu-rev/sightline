@@ -19,6 +19,9 @@ internal sealed record FilesWork(IReadOnlyList<string> Paths) : Work;
 /// Editor text for a file. Text = null drops the unsaved buffer and goes back to disk.
 internal sealed record OverlayWork(string Path, string? Text, bool Saved = false) : Work;
 
+/// What the running apps reported about themselves; see RuntimeMerge.
+internal sealed record RuntimeWork(IReadOnlyList<RuntimeApp> Apps) : Work;
+
 internal sealed record StatusInfo(string State, string Message);
 
 /// Filter: projects to leave off the map. Restore: run "dotnet restore" for projects that were never restored.
@@ -55,6 +58,7 @@ internal sealed class LiveSession
     readonly Dictionary<string, List<DocumentId>> _tracked = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, string> _overlays = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<ProjectId> _pendingSync = [];
+    IReadOnlyList<RuntimeApp> _runtime = [];
 
     volatile Snapshot _snapshot = Snapshot.Empty;
     volatile StatusInfo _status = new("loading", "Starting");
@@ -138,6 +142,10 @@ internal sealed class LiveSession
                             case ReloadWork: await LoadAsync(ct); break;
                             case FilesWork f: await ApplyFilesAsync(f.Paths, ct); break;
                             case OverlayWork o: await ApplyOverlayAsync(o, ct); break;
+                            case RuntimeWork r:
+                                _runtime = r.Apps;
+                                if (_solution is not null) Publish("runtime", [], Stopwatch.StartNew());
+                                break;
                         }
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -171,6 +179,7 @@ internal sealed class LiveSession
         while (_queue.Reader.TryPeek(out var next))
         {
             var skip = (work is ReloadWork && next is ReloadWork)
+                       || (work is RuntimeWork && next is RuntimeWork)
                        || (work is OverlayWork { Saved: false } a && next is OverlayWork b && SamePath(a.Path, b.Path));
             if (!skip) break;
             _queue.Reader.TryRead(out _);
@@ -289,7 +298,7 @@ internal sealed class LiveSession
             if (await SetTextAsync(path, SourceText.From(text, Encoding.UTF8), ct))
                 await ReextractAsync(TrackedIds(path), ct);
 
-        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
         _snapshot = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         _hub.Publish("reload", $"{{\"version\":{_snapshot.Version}}}");
 
@@ -600,7 +609,7 @@ internal sealed class LiveSession
 
     void Publish(string reason, IReadOnlyList<string> files, Stopwatch sw)
     {
-        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks);
+        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
         var next = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         var relative = files.Select(f => Path.GetRelativePath(RootDir, f).Replace('\\', '/'));
         var patch = Snapshot.Diff(_snapshot, next, reason, relative, sw.ElapsedMilliseconds);

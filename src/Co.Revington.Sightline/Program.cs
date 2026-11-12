@@ -26,9 +26,11 @@ return Cli.Parse(args) switch
 static async Task<int> OpenMapAsync(MapOptions options)
 {
     // Started beside an app: when this solution already has a map open, join it instead of opening another.
+    // The app reads these two lines, and reports its services, endpoints and requests to the map with the token.
     if (options.AttachPid is int joining && await Instances.JoinAsync(options.Target, joining) is { } open)
     {
-        Console.WriteLine($"sightline-url: {open}");
+        Console.WriteLine($"sightline-token: {open.Token}");
+        Console.WriteLine($"sightline-url: {open.Url}");
         return 0;
     }
 
@@ -37,7 +39,8 @@ static async Task<int> OpenMapAsync(MapOptions options)
     var hub = new EventHub();
     var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore, options.Checks));
     var companions = new Companions(closeWithApps: options.AttachPid is not null, Companions.DefaultGrace);
-    var app = WebApp.Build(session, hub, port, token, options.UiDir, companions);
+    var server = new ServerOptions(companions, options.Config?.Dir, options.Config?.Editor);
+    var app = WebApp.Build(session, hub, port, token, options.UiDir, server);
 
     await app.StartAsync();
     Instances.Register(options.Target, port, token);
@@ -46,7 +49,8 @@ static async Task<int> OpenMapAsync(MapOptions options)
     if (options.AttachPid is int parent)
     {
         companions.Attach(parent);
-        Console.WriteLine($"sightline-url: {url}");       // read by the app that started this map
+        Console.WriteLine($"sightline-token: {token}");
+        Console.WriteLine($"sightline-url: {url}");
     }
 
     Console.WriteLine($"Sightline {ToolInfo.Version}");

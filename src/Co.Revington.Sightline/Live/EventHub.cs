@@ -7,6 +7,12 @@ internal sealed class EventHub
 {
     readonly List<Channel<string>> _subscribers = [];
 
+    /// Open page connections.
+    public int Count
+    {
+        get { lock (_subscribers) return _subscribers.Count; }
+    }
+
     public Channel<string> Subscribe()
     {
         var channel = Channel.CreateUnbounded<string>();

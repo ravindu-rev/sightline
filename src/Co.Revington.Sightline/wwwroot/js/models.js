@@ -29,6 +29,19 @@ const ARROW = '→';
 
 // -------------------------------------------------------------------- node builders
 
+/** A dot in the corner of a station that has problems; its colour says how bad the worst one is. */
+export function badge(store, id) {
+  const severity = store.severityOf(id);
+  if (!severity) return '';
+  const list = store.problemsFor(id);
+  return `<span class="pb pb-${severity}" title="${esc(list.map((p) => p.title).join('\n'))}"></span>`;
+}
+
+/** Marks a station the running app confirmed (it saw the endpoint or the registration). */
+function runtimeMark(n) {
+  return n.meta?.runtime === 'only' ? '<span class="chip run" title="Seen only in the running app">runtime</span>' : '';
+}
+
 function typeNode(store, t, extra = {}) {
   // extra.plain: name only. extra.compact: name and role, no DI lifetime. Both keep nodes narrow.
   const tag = extra.plain ? null : (t.meta.tags ?? []).find((x) => SHOWN_TAGS.has(x));
@@ -36,7 +49,8 @@ function typeNode(store, t, extra = {}) {
     id: t.id, kind: 'type', zone: store.zoneClass(t.id), ref: t.id,
     html: typeCode(t.meta.typeKind) + `<span class="t">${esc(t.name)}</span>` +
       (tag ? `<span class="chip">${esc(tagLabel(tag))}</span>` : '') +
-      (t.meta.lifetime && !extra.plain && !extra.compact ? `<span class="chip life">${esc(t.meta.lifetime)}</span>` : ''),
+      (t.meta.lifetime && !extra.plain && !extra.compact ? `<span class="chip life">${esc(t.meta.lifetime)}</span>` : '') +
+      badge(store, t.id),
     title: `${t.meta.typeKind} ${t.ns ? t.ns + '.' : ''}${t.name}`,
     ...extra,
   };
@@ -50,7 +64,7 @@ function memberNode(store, m, extra = {}) {
   return {
     id: m.id, kind: 'member', zone: store.zoneClass(m.id), ref: m.id,
     html: `<span class="col"><span class="s">${esc(owner?.name ?? '')}${extra.note ? ` <i>${esc(extra.note)}</i>` : ''}</span>` +
-      `<span class="t">${esc(name)}</span></span>${extra.more ? `<span class="more">+${extra.more}</span>` : ''}`,
+      `<span class="t">${esc(name)}</span></span>${extra.more ? `<span class="more">+${extra.more}</span>` : ''}${badge(store, m.id)}`,
     title: `${owner?.name ?? ''}.${m.meta.sig}`,
     ...extra,
   };
@@ -60,7 +74,7 @@ function endpointNode(store, ep, extra = {}) {
   return {
     id: ep.id, kind: 'endpoint', zone: store.zoneClass(ep.id), ref: ep.id,
     html: verbChip(ep.meta.verb) + `<span class="route">${esc(ep.meta.route)}</span>` +
-      (ep.meta.auth ? `<span class="chip lock">auth</span>` : ''),
+      (ep.meta.auth ? `<span class="chip lock">auth</span>` : '') + runtimeMark(ep) + badge(store, ep.id),
     title: ep.name,
     ...extra,
   };
@@ -73,7 +87,7 @@ function projectNode(store, p, typeCount, endpointCount) {
     html: `<span class="col"><span class="t">${esc(p.name)}</span><span class="meta">` +
       `<span class="chip">${esc(p.meta.projectKind)}</span>` +
       (p.meta.tfm ? `<span class="chip">${esc(p.meta.tfm)}</span>` : '') +
-      `<span class="s">${esc(counts)}</span></span></span>`,
+      `<span class="s">${esc(counts)}</span></span></span>${badge(store, p.id)}`,
     title: 'Double-click to open this project',
   };
 }

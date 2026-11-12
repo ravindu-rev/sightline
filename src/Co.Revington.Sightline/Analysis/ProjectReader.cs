@@ -10,6 +10,7 @@ internal sealed class ProjectFacts
 {
     public required string Id { get; init; }          // graph node id: "proj:Name"
     public required string Name { get; init; }
+    public string AssemblyName { get; init; } = "";
     public required string Path { get; init; }
     public required string Dir { get; init; }
     public required string Kind { get; init; }        // web | worker | exe | test | lib
@@ -57,7 +58,7 @@ internal static class ProjectReader
 
         return new ProjectFacts
         {
-            Id = nodeId, Name = name, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
+            Id = nodeId, Name = name, AssemblyName = project.AssemblyName, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
             RoslynId = project.Id, ProjectRefs = refs, Packages = packages,
         };
     }

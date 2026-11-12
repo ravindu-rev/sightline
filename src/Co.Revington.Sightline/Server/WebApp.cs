@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Co.Revington.Sightline.Analysis;
 using Co.Revington.Sightline.Live;
 using Microsoft.AspNetCore.Builder;
@@ -11,6 +12,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Co.Revington.Sightline.Server;
 
+/// Companions: apps this map runs beside. ToursRoot: where .sightline/tours lives. Editor: "editor" from sightline.json.
+internal sealed record ServerOptions(Companions? Companions = null, string? ToursRoot = null, string? Editor = null);
+
 /// Local web server: serves the UI, the graph, live events and source files.
 internal static class WebApp
 {
@@ -18,8 +22,15 @@ internal static class WebApp
 
     sealed record AttachBody(int Pid);
 
-    public static WebApplication Build(LiveSession session, EventHub hub, int port, string token, string uiDir, Companions? companions = null)
+    sealed record OpenBody(string File, int Line, string? Editor);
+
+    sealed record RevealBody(string File, int Line);
+
+    public static WebApplication Build(LiveSession session, EventHub hub, int port, string token, string uiDir, ServerOptions? options = null)
     {
+        options ??= new ServerOptions();
+        var companions = options.Companions;
+        var runtime = new RuntimeRegistry(session, hub);
         // Content root is the tool folder, so the analyzed app's appsettings.json is never picked up.
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
@@ -76,9 +87,10 @@ internal static class WebApp
 
             // Only the tool's own scripts may run. Names and routes from the analyzed code are shown as text,
             // and this stops them from ever executing even if one slipped through unescaped.
+            // Framing is allowed only inside VS Code (its Simple Browser), never by a website.
             ctx.Response.Headers.ContentSecurityPolicy =
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
-                "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' vscode-webview:";
             ctx.Response.Headers.XContentTypeOptions = "nosniff";
             await ctx.Response.WriteAsync(html.Replace("__SIGHTLINE_TOKEN__", token));
         });
@@ -156,7 +168,120 @@ internal static class WebApp
             ctx.Response.StatusCode = joined ? StatusCodes.Status204NoContent : StatusCodes.Status400BadRequest;
         });
 
+        // Opens a file of the solution in the developer's editor.
+        app.MapPost("/api/open", async ctx =>
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<OpenBody>();
+            var file = FullPath(body?.File);
+            if (body is null || file is null || !session.IsTracked(file))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            var result = EditorLauncher.Open(file, body.Line, body.Editor, options.Editor);
+            await Json(ctx, JsonSerializer.Serialize(result, Snapshot.Json));
+        });
+
+        // "Show in map" from an editor: the node at a file and line, shown in every open map page.
+        app.MapPost("/api/reveal", async ctx =>
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<RevealBody>();
+            var file = FullPath(body?.File);
+            var node = file is null || session.Snapshot.Graph is not { } graph ? null : NodeAt(graph, file, body!.Line);
+            if (node is null)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            var hash = HashFor(node);
+            hub.Publish("reveal", JsonSerializer.Serialize(new { hash }, Snapshot.Json));
+            await Json(ctx, JsonSerializer.Serialize(new { id = node.Id, name = node.Name, kind = node.Kind, hash, viewers = hub.Count }, Snapshot.Json));
+        });
+
+        // Tours kept in the repository, under .sightline/tours.
+        var toursRoot = options.ToursRoot ?? session.RootDir;
+        app.MapGet("/api/tours", ctx => Json(ctx, Tours.Load(toursRoot).ToJsonString()));
+        app.MapPut("/api/tours", async ctx =>
+        {
+            var tour = await JsonNode.ParseAsync(ctx.Request.Body) as JsonObject;
+            try
+            {
+                var id = Tours.Save(toursRoot, tour ?? throw new ArgumentException("A tour is a JSON object."), ctx.Request.Query["id"].FirstOrDefault());
+                await Json(ctx, JsonSerializer.Serialize(new { id }, Snapshot.Json));
+            }
+            catch (ArgumentException ex)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await ctx.Response.WriteAsync(ex.Message);
+            }
+        });
+        app.MapDelete("/api/tours", ctx =>
+        {
+            var deleted = Tours.Delete(toursRoot, ctx.Request.Query["id"].FirstOrDefault() ?? "");
+            ctx.Response.StatusCode = deleted ? StatusCodes.Status204NoContent : StatusCodes.Status404NotFound;
+            return Task.CompletedTask;
+        });
+
+        // Running apps (Co.Revington.Sightline.Hosting) report their services, endpoints and requests here.
+        app.MapPost("/api/runtime", async ctx =>
+        {
+            var report = await ctx.Request.ReadFromJsonAsync<RuntimeReport>(Snapshot.Json);
+            if (report is null || string.IsNullOrWhiteSpace(report.App))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+            runtime.Report(report);
+            ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+        });
+        app.MapGet("/api/runtime", ctx => Json(ctx, JsonSerializer.Serialize(runtime.Apps(), Snapshot.Json)));
+
+        app.MapPost("/api/trace", async ctx =>
+        {
+            var batch = await ctx.Request.ReadFromJsonAsync<TraceBatch>(Snapshot.Json);
+            if (batch?.Traces is null)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+            runtime.AddTraces(batch);
+            ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+        });
+        app.MapGet("/api/traces", ctx => Json(ctx, JsonSerializer.Serialize(runtime.Traces(), Snapshot.Json)));
+
+        // "Try it": a request to a local app, sent from here because the page cannot read other ports.
+        app.MapPost("/api/try", async ctx =>
+        {
+            var request = await ctx.Request.ReadFromJsonAsync<TryRequest>(Snapshot.Json);
+            if (request is null)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+            await Json(ctx, JsonSerializer.Serialize(await TryProxy.SendAsync(request, ctx.RequestAborted), Snapshot.Json));
+        });
+
         return app;
+    }
+
+    /// The innermost member, endpoint or type that covers a line of a file.
+    static Node? NodeAt(Graph graph, string file, int line) =>
+        graph.Nodes.Values
+            .Where(n => n.Kind is "member" or "type" or "endpoint" && n.File is not null && n.Line is not null
+                        && string.Equals(Path.GetFullPath(n.File), file, StringComparison.OrdinalIgnoreCase)
+                        && n.Line <= line && (n.EndLine ?? n.Line) >= line)
+            .OrderBy(n => (n.EndLine ?? n.Line) - n.Line)
+            .ThenBy(n => n.Kind == "endpoint" ? 0 : n.Kind == "member" ? 1 : 2)
+            .FirstOrDefault();
+
+    /// The page address that shows a node: endpoints and methods as a flow, anything else in focus on its type.
+    static string HashFor(Node node)
+    {
+        var flow = node.Kind == "endpoint" || node.Meta.GetValueOrDefault("memberKind") is "method" or "ctor";
+        var (view, id, sel) = flow ? ("flow", node.Id, null)
+            : node.Kind == "member" ? ("focus", node.Parent ?? node.Id, node.Id)
+            : ("focus", node.Id, (string?)null);
+        return $"#view={view}&id={Uri.EscapeDataString(id)}" + (sel is null ? "" : $"&sel={Uri.EscapeDataString(sel)}");
     }
 
     static string? FullPath(string? path)

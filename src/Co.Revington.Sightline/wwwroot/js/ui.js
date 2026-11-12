@@ -40,6 +40,13 @@ const ICONS = {
   expand: '<path d="M3 6l5 5 5-5"/>',
   collapse: '<path d="M3 10l5-5 5 5"/>',
   reload: '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3"/>',
+  check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+  play: '<path d="M5 3.5v9l7-4.5z"/>',
+  send: '<path d="M2.5 8h9M8.5 4.5 12 8l-3.5 3.5"/>',
+  link: '<path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 0 1 4 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 0 1-4-4L5 7.5"/>',
+  tour: '<circle cx="3.5" cy="12" r="1.5"/><circle cx="12.5" cy="4" r="1.5"/><path d="M5 12h3.5a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4H11"/>',
+  pulse: '<path d="M1.5 8h3l2-4.5 3 9 2-4.5h3"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8"/>',
 };
 
 export const icon = (name, size = 14) =>
@@ -69,7 +76,20 @@ export const debounce = (fn, ms) => {
   };
 };
 
-export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+export const plural = (n, word, many = word + 's') => `${n} ${n === 1 ? word : many}`;
+
+/** A short message at the bottom of the page that goes away by itself. */
+export function toast(text, ms = 4000) {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = h('div', { class: 'toast', role: 'status' });
+    document.body.append(el);
+  }
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(el.__timer);
+  el.__timer = setTimeout(() => el.classList.remove('on'), ms);
+}
 
 /** Browser storage can be blocked; never let that break the page. */
 export const remember = {

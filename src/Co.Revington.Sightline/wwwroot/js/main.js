@@ -6,7 +6,9 @@ import { GraphView } from './graphview.js';
 import { mapModel, flowModel, focusModel, KIND_GROUPS, KIND_WORDS } from './models.js';
 import { Sidebar } from './sidebar.js';
 import { Inspector } from './inspector.js';
-import { esc, h, icon, typeCode, verbChip, fileName, plural, remember } from './ui.js';
+import { Live } from './live.js';
+import { Tours } from './tours.js';
+import { esc, h, icon, typeCode, verbChip, fileName, plural, remember, toast } from './ui.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -20,6 +22,7 @@ const state = {
   packages: false,
   flow: { root: null, dir: 'down', depth: 6 },
   focus: { id: null, trail: [] },
+  trace: null,                                           // a request whose path is lit on the flow
 };
 
 let model = { key: '', nodes: [], edges: [], rep: () => null };
@@ -65,13 +68,97 @@ const inspector = new Inspector($('.insp'), store, {
   focus: (id) => { setFocus(id); renderView().then(() => select(state.selected ?? id)); },
   toggle: (id) => { state.view = 'map'; toggle(id); },
   reload: () => api.reload(),
+
+  // requests from the running app
+  requests: () => showRequests(),
+  trace: (id) => showTrace(live.trace(id)),
+  traceFlow: (id) => traceFlow(live.trace(id)),
+
+  // tours
+  tours: () => { tours.draft = null; showTours(); },
+  tourPlay: (id) => tours.play(id),
+  tourNew: () => { tours.newTour(); showTourEditor(); },
+  tourEdit: (id) => { tours.edit(id); showTourEditor(); },
+  tourAdd: () => { tours.addStep(); showTourEditor(); },
+  tourUp: (i) => { tours.moveUp(Number(i)); showTourEditor(); },
+  tourDrop: (i) => { tours.drop(Number(i)); showTourEditor(); },
+  tourSave: async () => { if (await tours.save()) showTours(); },
+  tourDelete: async (id) => { if (await tours.remove(id)) showTours(); },
 });
+
+const live = new Live(store, {
+  traceFlow: (t) => traceFlow(t),
+  refreshList: () => { if (inspector.sel?.requests) inspector.rerender(); },
+});
+inspector.slots = { endpoint: (slot, n) => live.mount(slot, n) };
+
+const tours = new Tours(store, {
+  canvas: canvas,
+  current: () => {
+    const id = state.view === 'flow' ? state.flow.root : state.view === 'focus' ? state.focus.id : state.selected;
+    return { view: state.view, id, label: id ? store.label(id) : '', dir: state.flow.dir };
+  },
+});
+$('.detail').addEventListener('input', (e) => tours.onInput(e.target));
+
+function showRequests() {
+  clearSelection();
+  inspector.show({ requests: true, custom: () => live.listHtml() });
+}
+
+function showTrace(t) {
+  if (!t) return;
+  inspector.show({ trace: t.id, custom: () => live.traceHtml(t) });
+}
+
+/** Opens the flow of the endpoint a request went to, with the steps it reached lit up. */
+function traceFlow(t) {
+  if (!t?.endpoint || !store.node(t.endpoint)) return showTrace(t);
+  state.trace = t;
+  state.view = 'flow';
+  state.flow.root = t.endpoint;
+  state.flow.dir = 'down';
+  renderView({ fit: true }).then(() => showTrace(t));
+}
+
+function showTours() {
+  clearSelection();
+  inspector.show({ tours: true, custom: () => tours.listHtml() });
+}
+
+function showTourEditor() {
+  inspector.show({ tours: true, custom: () => tours.editorHtml() });
+}
+
+function clearSelection() {
+  state.selected = null;
+  view.select(null);
+  sidebar.setCurrent(null);
+}
+
+/** Ids on the flow that a request reached: the database and HTTP stops it used, and every step on the way. */
+function hitsOf(t) {
+  if (!t || state.view !== 'flow' || state.flow.root !== t.endpoint) return [];
+  const used = model.nodes.filter((n) => n.kind === 'terminal' && ((n.cls?.includes('t-db') && t.sql?.length) || (n.cls?.includes('t-http') && t.http?.length)));
+  const into = new Map();
+  for (const e of model.edges) (into.get(e.target) ?? into.set(e.target, []).get(e.target)).push(e.source);
+  const hits = new Set([t.endpoint]);
+  const stack = used.map((n) => n.id);
+  while (stack.length) {
+    const id = stack.pop();
+    if (hits.has(id) && id !== t.endpoint) continue;
+    hits.add(id);
+    for (const source of into.get(id) ?? []) stack.push(source);
+  }
+  return [...hits];
+}
 
 function select(id) {
   state.selected = id;
   view.select(id ? model.rep(id) : null);
   sidebar.setCurrent(id);
   inspector.show(id ? { node: id } : null);
+  writeLink(false);
 }
 
 /** Jump to something picked from a list or from search, switching to the view that suits it. */
@@ -139,9 +226,91 @@ async function renderView({ fit = false } = {}) {
   else if (state.view === 'focus') model = focusModel(store, { id: state.focus.id, kinds: state.kinds });
   else model = mapModel(store, state);
 
+  if (state.trace && (state.view !== 'flow' || state.flow.root !== state.trace.endpoint)) state.trace = null;
   renderChrome();
+  writeLink(true);
   await view.render(model, { fit });
   if (state.selected) view.select(model.rep(state.selected));
+  view.markHits(hitsOf(state.trace));
+}
+
+// -------------------------------------------------------------------- links
+// The address keeps the view and what it shows. Node ids do not depend on the machine, so a link
+// opens the same picture for a teammate with the same solution open, and in an exported map.
+
+let applyingLink = false;
+let lastSubject = null;
+
+function linkFor() {
+  const p = new URLSearchParams();
+  p.set('view', state.view);
+  const subject = state.view === 'flow' ? state.flow.root : state.view === 'focus' ? state.focus.id : state.selected;
+  if (subject) p.set('id', subject);
+  if (state.view === 'flow' && state.flow.dir === 'up') p.set('dir', 'up');
+  if (state.view === 'flow' && state.flow.depth !== 6) p.set('depth', String(state.flow.depth));
+  if (state.view !== 'map' && state.selected && state.selected !== subject) p.set('sel', state.selected);
+  return { hash: '#' + p.toString(), subject: state.view + ':' + (subject ?? '') };
+}
+
+/** push: a new view or subject gets its own history entry, so Back returns to the previous picture. */
+function writeLink(push) {
+  if (applyingLink || !started) return;
+  const { hash, subject } = linkFor();
+  if (location.hash === hash) return;
+  if (push && subject !== lastSubject) history.pushState(null, '', hash);
+  else history.replaceState(null, '', hash);
+  lastSubject = subject;
+  lastApplied = hash;
+}
+
+let lastApplied = null;
+
+/** Shows what the address asks for. False when it asks for nothing. */
+function readLink() {
+  lastApplied = location.hash;
+  const p = new URLSearchParams(location.hash.slice(1));
+  const name = p.get('view');
+  if (!['map', 'flow', 'focus'].includes(name)) return false;
+
+  const id = p.get('id');
+  const sel = p.get('sel');
+  if (id && !store.node(id)) toast('The link points at something that is not in this solution any more.');
+
+  applyingLink = true;
+  state.view = name;
+  if (name === 'flow' && store.node(id)) {
+    state.flow.root = id;
+    state.flow.dir = p.get('dir') === 'up' ? 'up' : 'down';
+    state.flow.depth = Math.min(12, Math.max(1, Number(p.get('depth')) || 6));
+  }
+  if (name === 'focus' && store.typeOf(id)) state.focus.id = store.typeOf(id).id;
+  const target = store.node(sel) ? sel : store.node(id) ? id : null;
+  if (name === 'map' && target) {
+    const n = store.node(target);
+    const project = n.kind === 'project' ? n.id : n.project;
+    if (project && n.kind !== 'project') state.expanded.add(project);
+  }
+
+  renderView({ fit: true }).then(() => {
+    if (target) {
+      state.selected = target;
+      view.select(model.rep(target));
+      sidebar.setCurrent(target);
+      inspector.show({ node: target });
+      view.reveal(model.rep(target));
+    }
+    applyingLink = false;
+    lastSubject = linkFor().subject;
+  });
+  return true;
+}
+
+// Back and Forward, a pasted link, or "Show in map" from an editor.
+for (const type of ['hashchange', 'popstate']) {
+  window.addEventListener(type, () => {
+    if (!started || location.hash === lastApplied || location.hash === linkFor().hash) return;
+    readLink();
+  });
 }
 
 // -------------------------------------------------------------------- toolbar, legend, empty states
@@ -187,6 +356,12 @@ function renderChrome() {
       };
       items.push(direction, tool('', deeper(-1), { iconName: 'minus', title: 'Show fewer steps' }),
         h('span', null, `${state.flow.depth} steps deep`), tool('', deeper(1), { iconName: 'plus', title: 'Show more steps' }));
+      if (state.trace) {
+        const t = state.trace;
+        items.push(h('span', { class: 'chip run trace-chip', title: 'Lit: the steps this request reached' },
+          `Request ${t.status} in ${Math.round(t.ms)} ms`),
+        tool('Clear', () => { state.trace = null; renderView(); }, { title: 'Stop showing this request' }));
+      }
     }
   } else {
     const center = store.node(state.focus.id);
@@ -234,7 +409,8 @@ function renderStatus() {
   const stateName = online ? s.state : 'offline';
   el.dataset.state = stateName;
   el.lastElementChild.textContent =
-    stateName === 'offline' ? 'Disconnected, retrying'
+    api.mode === 'export' ? `Exported ${api.exportInfo?.exported ?? ''}`
+    : stateName === 'offline' ? 'Disconnected, retrying'
     : stateName === 'loading' ? s.message
     : stateName === 'error' ? 'Load failed'
     : lastMs == null ? 'Live' : `Live, last update ${lastMs} ms`;
@@ -244,6 +420,33 @@ function renderStatus() {
   const button = $('#notes');
   button.hidden = notes.length === 0;
   button.textContent = plural(notes.length, 'load warning');
+
+  renderProblemsButton();
+  $('#made-with').hidden = api.mode !== 'export';
+  $('#feedback').href = feedbackLink();
+}
+
+/** Header button with the number of problems, coloured by the worst one. */
+function renderProblemsButton() {
+  const button = $('#problems');
+  const problems = store.problems ?? [];
+  const worst = ['error', 'warning', 'info'].find((level) => problems.some((p) => p.severity === level)) ?? 'none';
+  button.hidden = !store.projects.length;
+  button.dataset.severity = worst;
+  button.replaceChildren();
+  button.insertAdjacentHTML('afterbegin', icon(worst === 'none' ? 'check' : 'warn'));
+  button.append(problems.length ? plural(problems.length, 'problem') : 'No problems');
+}
+
+/** A new GitHub issue with the version and the size of the solution filled in; no names or paths. */
+function feedbackLink() {
+  const c = store.info.counts ?? {};
+  const body = [
+    '**What happened, or what would help?**', '', '', '---',
+    `Sightline ${store.info.version ?? api.exportInfo?.version ?? ''}${api.mode === 'export' ? ' (exported map)' : ''}`,
+    `Solution size: ${c.projects ?? '?'} projects, ${c.types ?? '?'} types, ${c.endpoints ?? '?'} endpoints`,
+  ].join('\n');
+  return 'https://github.com/ravindu-rev/sightline/issues/new?labels=feedback&body=' + encodeURIComponent(body);
 }
 
 // -------------------------------------------------------------------- live updates
@@ -260,6 +463,7 @@ function follow(id, change) {
 
 async function onPatch(change) {
   lastMs = change.ms;
+  if (change.reason === 'save' || change.reason === 'disk') live.onSaved();
 
   const selected = follow(state.selected, change);
   state.flow.root = follow(state.flow.root, change);
@@ -270,6 +474,7 @@ async function onPatch(change) {
     sidebar.current = selected;
   }
 
+  if (change.problems) renderProblemsButton();
   if (change.structural) {
     sidebar.render();
     await renderView();
@@ -301,9 +506,11 @@ function onReset() {
   }
 
   sidebar.render();
+  renderStatus();
+  // A link that names a view and a node opens there; otherwise the map as it was.
+  if (first && readLink()) return;
   renderView({ fit: first });
   inspector.show(state.selected ? { node: state.selected } : null);
-  renderStatus();
 }
 
 store.addEventListener('reset', onReset);
@@ -349,6 +556,13 @@ const events = {
     renderStatus();
     recover();
   },
+  /** "Show in map" from an editor: the server says what to show; the address does the rest. */
+  reveal(message) {
+    if (message.hash && message.hash !== location.hash) location.hash = message.hash;
+    window.focus();
+  },
+  runtime: (apps) => live.onRuntime(apps),
+  trace: (t) => live.onTrace(t),
 };
 let stream = api.events(events);
 
@@ -516,6 +730,12 @@ $('#zoom-in').addEventListener('click', () => view.zoomBy(1.25));
 $('#zoom-out').addEventListener('click', () => view.zoomBy(0.8));
 $('#zoom-fit').addEventListener('click', () => view.fit());
 $('#notes').addEventListener('click', () => inspector.show({ notes: store.info.diagnostics ?? [] }));
+$('#problems').addEventListener('click', () => {
+  clearSelection();
+  inspector.show({ problems: true });
+});
+$('#requests').addEventListener('click', () => showRequests());
+$('#tours').addEventListener('click', () => showTours());
 
 $('#theme').addEventListener('click', () => {
   const root = document.documentElement;
@@ -580,4 +800,7 @@ window.addEventListener('resize', () => {
 sidebar.render();
 renderChrome();
 renderStatus();
-load();
+load().then(() => {
+  live.start();
+  tours.load();
+});

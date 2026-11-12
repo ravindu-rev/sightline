@@ -13,7 +13,7 @@ public sealed partial class HostingPackageTests(HostingFixture hosting) : IClass
     [Fact]
     public void Adds_no_warnings_to_the_app_even_with_every_analysis_rule_on()
     {
-        Assert.DoesNotMatch("SightlineAutoStart\\.cs|SightlineHosting\\.cs", hosting.StrictBuildOutput);
+        Assert.DoesNotMatch("Sightline(AutoStart|Hosting|Runtime)\\.cs", hosting.StrictBuildOutput);
     }
 
     [Fact]
@@ -31,7 +31,18 @@ public sealed partial class HostingPackageTests(HostingFixture hosting) : IClass
         var redirect = await http.GetAsync($"http://127.0.0.1:{first.Port}/sightline");
         Assert.Equal(HttpStatusCode.Redirect, redirect.StatusCode);
         Assert.Equal(map, redirect.Headers.Location!.ToString().TrimEnd('/'));
-        Assert.Contains("<title>Sightline</title>", await http.GetStringAsync(map));
+        var page = await http.GetStringAsync(map);
+        Assert.Contains("<title>Sightline</title>", page);
+
+        // The running app tells the map its address and endpoints, and reports the requests it handles.
+        http.DefaultRequestHeaders.Add("X-Sightline-Token", TokenOf().Match(page).Groups[1].Value);
+        var apps = await EventuallyAsync(() => http.GetStringAsync(map + "/api/runtime"), json => json.Contains($"127.0.0.1:{first.Port}"));
+        Assert.Contains("\"app\":\"App\"", apps);
+        Assert.Equal("hello", await http.GetStringAsync($"http://127.0.0.1:{first.Port}/"));
+        // The request is matched to its endpoint once the map has read the solution.
+        var traces = await EventuallyAsync(() => http.GetStringAsync(map + "/api/traces"), json => json.Contains("\"endpoint\":\"ep:App:GET /\""));
+        Assert.Contains("\"path\":\"/\"", traces);
+        await EventuallyAsync(() => http.GetStringAsync(map + "/api/graph"), json => json.Contains("\"runtime\":\"seen\""));
 
         // A second copy of the app joins the same map instead of opening another.
         using (var second = hosting.Start("Debug"))
@@ -60,6 +71,22 @@ public sealed partial class HostingPackageTests(HostingFixture hosting) : IClass
         Assert.DoesNotContain(app.Lines, l => l.StartsWith("Sightline:", StringComparison.Ordinal));
         Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"http://127.0.0.1:{app.Port}/sightline")).StatusCode);
     }
+
+    /// Asks again until the answer satisfies the condition: the app reports a moment after it starts.
+    static async Task<string> EventuallyAsync(Func<Task<string>> ask, Func<string, bool> condition)
+    {
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            var answer = await ask();
+            if (condition(answer)) return answer;
+            Assert.True(waited.Elapsed < TimeSpan.FromSeconds(30), "The map did not receive the report in time. Last answer: " + answer);
+            await Task.Delay(300);
+        }
+    }
+
+    [GeneratedRegex("name=\"sightline-token\" content=\"([^\"]+)\"")]
+    private static partial Regex TokenOf();
 
     static async Task<bool> RespondsAsync(HttpClient http, string url)
     {

@@ -39,7 +39,7 @@ const MARKERS = {
   dispatches: 'send', db: 'data', http: 'net', creates: 'ink3', references: 'ink3', packageRef: 'ink3',
 };
 
-const STATE_CLASSES = ['enter', 'sel', 'hl', 'pulse'];
+const STATE_CLASSES = ['enter', 'sel', 'hl', 'pulse', 'hit'];
 
 export class GraphView {
   constructor(host, handlers) {
@@ -416,6 +416,12 @@ export class GraphView {
     if (this.selected) this.els.get(this.selected)?.classList.add('sel');
     if (this.selectedEdge) this.edgeEls.get(this.selectedEdge)?.path.classList.add('sel');
     this.#drawLinks();
+  }
+
+  /** Lights the steps a real request reached. */
+  markHits(ids) {
+    const lit = new Set(ids);
+    for (const [id, el] of this.els) el.classList.toggle('hit', lit.has(id));
   }
 
   /** Flashes nodes that just changed. */
