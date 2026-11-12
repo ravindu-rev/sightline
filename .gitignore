@@ -1,0 +1,15 @@
+# build output
+bin/
+obj/
+artifacts/
+nupkg/
+TestResults/
+
+# written by .github/scripts/plan-release.sh
+release-notes.md
+
+# editors and tools
+.vs/
+.idea/
+*.user
+.playwright-mcp/

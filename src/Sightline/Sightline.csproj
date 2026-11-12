@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Also run on newer runtimes, so the tool keeps working after the next .NET release. -->
+    <RollForward>Major</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sightline</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- NuGet package: a .NET tool, installed with "dotnet tool install -g Sightline". -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sightline</ToolCommandName>
+    <PackageId>Sightline</PackageId>
+    <!-- Local builds use this version. Releases get theirs from .github/scripts/plan-release.sh.
+         Raise this number to force a bigger jump, for example to 1.0.0. -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Authors>Ravindu Wijegunawardhana</Authors>
+    <Copyright>Copyright (c) 2026 Ravindu Wijegunawardhana</Copyright>
+    <Description>A live, editable map of a .NET solution. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
+    <PackageTags>dotnet-tool;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;visualization</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageProjectUrl>https://github.com/ravindu-rev/sightline</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ravindu-rev/sightline</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>https://github.com/ravindu-rev/sightline/releases</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="wwwroot\**" />
+    <!-- UI files ship next to the tool binary. Pack=false avoids extra "content" copies in the package. -->
+    <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" Pack="false" />
+
+    <!-- Shown on nuget.org -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sightline.Tests" />
+  </ItemGroup>
+
+</Project>

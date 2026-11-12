@@ -1,0 +1,10 @@
+# Text files are stored with LF and checked out in the platform's style.
+* text=auto
+
+# Shell scripts must keep LF everywhere, or bash on the build server fails.
+*.sh text eol=lf
+
+*.png binary
+
+# Bundled libraries: keep them out of GitHub's language statistics and diffs.
+src/Sightline/wwwroot/lib/** linguist-vendored

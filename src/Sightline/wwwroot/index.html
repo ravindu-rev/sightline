@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="sightline-token" content="__SIGHTLINE_TOKEN__">
+  <title>Sightline</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2313233a'/%3E%3Cpath d='M3 11h4V5h6' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='3' cy='11' r='1.6' fill='%233dd6a0'/%3E%3Ccircle cx='13' cy='5' r='1.6' fill='%23f2a900'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/lib/codemirror/codemirror.css">
+  <link rel="stylesheet" href="/lib/codemirror/dialog.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="bar">
+      <div class="brand"><b>Sightline</b><span id="solution"></span></div>
+
+      <div class="seg" data-views role="group" aria-label="View">
+        <button data-view="map" aria-pressed="true" title="Projects, namespaces and types (1)">Map</button>
+        <button data-view="flow" aria-pressed="false" title="Steps behind an endpoint or method (2)">Flow</button>
+        <button data-view="focus" aria-pressed="false" title="One type and everything around it (3)">Focus</button>
+      </div>
+
+      <div class="find">
+        <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+        <input id="find" type="search" placeholder="Find a class, method, endpoint or package" autocomplete="off" spellcheck="false" aria-label="Find in the solution">
+        <div id="find-results" class="find-results" hidden></div>
+      </div>
+
+      <button class="tool warn" id="notes" hidden></button>
+      <div class="status" id="status" data-state="loading"><i></i><span>Starting</span></div>
+      <button class="tool" id="theme" title="Switch between light and dark" aria-label="Switch between light and dark">
+        <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor"/></svg>
+      </button>
+    </header>
+
+    <aside class="index" aria-label="Index of the solution">
+      <div class="tabs" role="tablist"></div>
+      <input class="filter" type="search" autocomplete="off" spellcheck="false" aria-label="Filter the list">
+      <div class="list"></div>
+    </aside>
+
+    <main class="canvas" aria-label="Map of the solution">
+      <div class="canvas-tools"></div>
+      <div class="empty" hidden></div>
+      <div class="legend" hidden></div>
+      <div class="zoom">
+        <button class="tool" id="zoom-out" title="Zoom out" aria-label="Zoom out">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10"/></svg>
+        </button>
+        <button class="tool" id="zoom-in" title="Zoom in" aria-label="Zoom in">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <button class="tool" id="zoom-fit" title="Fit everything on screen (F)" aria-label="Fit everything on screen">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+        </button>
+      </div>
+    </main>
+
+    <aside class="insp" aria-label="Details and code">
+      <div class="grip-x" title="Drag to resize"></div>
+      <section class="detail"></section>
+      <div class="grip-y" title="Drag to resize"></div>
+      <section class="editor">
+        <div class="editor-bar">
+          <span class="file" id="ed-file">No file open</span>
+          <span class="unsaved" id="ed-unsaved" hidden>Unsaved</span>
+          <button class="tool" id="ed-discard" disabled title="Go back to the file on disk">Discard changes</button>
+          <button class="tool" id="ed-save" disabled title="Write to disk (Ctrl+S)">Save file</button>
+          <a class="tool" id="ed-open" hidden title="Open this file in VS Code" aria-label="Open this file in VS Code">
+            <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h5v5M14 2 7.5 8.5M12 9.5V14H2V4h4.5"/></svg>
+          </a>
+        </div>
+        <div class="editor-body" id="ed-body">
+          <div class="editor-empty" id="ed-empty">Select a class, method or endpoint to see and edit its code here.</div>
+        </div>
+      </section>
+    </aside>
+
+    <footer class="feed">
+      <button class="last" id="feed-last" title="Show recent changes">
+        <span class="what">Edits to the code show up here as they happen.</span>
+      </button>
+      <div class="feed-log" id="feed-log" hidden></div>
+    </footer>
+  </div>
+
+  <script src="/lib/elk.bundled.js"></script>
+  <script src="/lib/codemirror/codemirror.js"></script>
+  <script src="/lib/codemirror/clike.js"></script>
+  <script src="/lib/codemirror/matchbrackets.js"></script>
+  <script src="/lib/codemirror/closebrackets.js"></script>
+  <script src="/lib/codemirror/active-line.js"></script>
+  <script src="/lib/codemirror/dialog.js"></script>
+  <script src="/lib/codemirror/searchcursor.js"></script>
+  <script src="/lib/codemirror/search.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

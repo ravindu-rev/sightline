@@ -1,0 +1,36 @@
+name: CI
+
+# Pull requests are built and tested on Linux and Windows before they can reach master.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and test
+        run: |
+          dotnet restore Sightline.sln
+          dotnet restore samples/Shop/Shop.sln
+          dotnet build Sightline.sln -c Release --no-restore
+          dotnet test Sightline.sln -c Release --no-build
+
+      # Proves the NuGet package still builds; nothing is published from a pull request.
+      - name: Pack
+        run: dotnet pack src/Sightline/Sightline.csproj -c Release -o artifacts

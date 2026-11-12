@@ -1,0 +1,81 @@
+name: Release
+
+# Every push to master is built and tested. If code under src/ changed, it is also released:
+# a new version number, a NuGet package, a git tag and a GitHub release with notes.
+# The file name matters: the trusted publishing policy on nuget.org names "release.yml".
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:      # "Run workflow" on GitHub: release even if src/ did not change
+
+# One release at a time. A newer push waits for the running one, so two pushes never get the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the tag and the GitHub release
+      id-token: write     # prove to nuget.org which repository is publishing (no stored API key)
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # all commits and tags: the next version is worked out from them
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and test
+        run: |
+          dotnet restore Sightline.sln
+          dotnet restore samples/Shop/Shop.sln
+          dotnet build Sightline.sln -c Release --no-restore
+          dotnet test Sightline.sln -c Release --no-build
+
+      - name: Plan the release
+        id: plan
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: bash .github/scripts/plan-release.sh
+
+      - name: Pack
+        if: steps.plan.outputs.release == 'true'
+        run: >
+          dotnet pack src/Sightline/Sightline.csproj -c Release -o artifacts
+          -p:Version=${{ steps.plan.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Sign in to nuget.org
+        if: steps.plan.outputs.release == 'true'
+        id: nuget
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish to nuget.org
+        if: steps.plan.outputs.release == 'true'
+        run: >
+          dotnet nuget push artifacts/*.nupkg
+          --api-key ${{ steps.nuget.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      # Last on purpose: the tag marks a version as released, so it is only set once the package is out.
+      - name: Create the GitHub release
+        if: steps.plan.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "v${{ steps.plan.outputs.version }}" artifacts/*.nupkg
+          --title "Sightline ${{ steps.plan.outputs.version }}"
+          --notes-file release-notes.md
+          --target "$GITHUB_SHA"
