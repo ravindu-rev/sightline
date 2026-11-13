@@ -1,15 +1,21 @@
 name: Release
 
 # Every push to master is built and tested. If code under src/ or vscode/ changed, it is also released:
-# a new version number, the NuGet packages, the VS Code extension, a git tag and a GitHub release with notes.
+# a new version number, the NuGet packages, a git tag, a GitHub release with notes, and the VS Code
+# extension, published from that release to the VS Code Marketplace.
 #
-# Two names here must match the trusted publishing policy on nuget.org:
-# this file's name, "release.yml", and the environment of the publish job, "production".
+# Two names here must match the trusted publishing policies on nuget.org and on the VS Code Marketplace:
+# this file's name, "release.yml", and the environment of the publish and extension jobs, "production".
 
 on:
   push:
     branches: [master]
   workflow_dispatch:      # "Run workflow" on GitHub: release even if src/ and vscode/ did not change
+    inputs:
+      extension:
+        description: Only publish the VS Code extension of the latest release (no new version)
+        type: boolean
+        default: false
 
 # One release at a time. A newer push waits for the running one, so two pushes never get the same version.
 concurrency:
@@ -21,6 +27,7 @@ permissions:
 
 jobs:
   test:
+    if: ${{ !inputs.extension }}
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.plan.outputs.release }}
@@ -96,38 +103,15 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      # The VS Code extension gets the same version. It is published to the VS Code Marketplace and to
-      # Open VSX (for VS Code forks) when their tokens are set as repository secrets; it is attached
-      # to the GitHub release either way.
+      # The VS Code extension gets the same version. It is attached to the GitHub release,
+      # and the extension job below publishes it from there.
       - name: Package the VS Code extension
         working-directory: vscode
         env:
           VERSION: ${{ needs.test.outputs.version }}
         run: |
           npm version "$VERSION" --no-git-tag-version --allow-same-version
-          npx --yes @vscode/vsce@3 package --no-dependencies --out "../artifacts/sightline-$VERSION.vsix"
-
-      # Secrets cannot appear in "if:", so this step says which tokens exist.
-      - name: Which marketplaces are set up
-        id: markets
-        env:
-          VSCE: ${{ secrets.VSCE_PAT != '' }}
-          OVSX: ${{ secrets.OVSX_PAT != '' }}
-        run: |
-          echo "vsce=$VSCE" >> "$GITHUB_OUTPUT"
-          echo "ovsx=$OVSX" >> "$GITHUB_OUTPUT"
-
-      - name: Publish to the VS Code Marketplace
-        if: steps.markets.outputs.vsce == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce@3 publish --packagePath "artifacts/sightline-${{ needs.test.outputs.version }}.vsix"
-
-      - name: Publish to Open VSX
-        if: steps.markets.outputs.ovsx == 'true'
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx@0 publish "artifacts/sightline-${{ needs.test.outputs.version }}.vsix" -p "$OVSX_PAT"
+          npx --yes @vscode/vsce@4 package --no-dependencies --out "../artifacts/sightline-$VERSION.vsix"
 
       # Last on purpose: the tag marks a version as released, so it is only set once the package is out.
       - name: Create the GitHub release
@@ -138,3 +122,43 @@ jobs:
           --title "Sightline ${{ needs.test.outputs.version }}"
           --notes-file release-notes.md
           --target "$GITHUB_SHA"
+
+  # Publishes the extension attached to the GitHub release. A separate job, so a marketplace that is
+  # down never holds up the release, and it can run again on its own: "Re-run failed jobs", or
+  # "Run workflow" with only the extension ticked.
+  extension:
+    needs: [test, publish]
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.extension) }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://marketplace.visualstudio.com/items?itemName=revington.sightline
+    permissions:
+      contents: read      # download the extension from the GitHub release
+      id-token: write     # prove to the VS Code Marketplace which repository and environment is publishing (no stored token)
+
+    steps:
+      - name: Download the extension from the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.test.outputs.version }}   # empty when only the extension is published: the latest release
+        run: gh release download ${VERSION:+"v$VERSION"} --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir artifacts
+
+      # Trusted publishing (vsce 4 or later): the Marketplace checks this run against the policy of
+      # publisher "revington" (repository, "release.yml", "production") and hands out a short-lived token.
+      - name: Publish to the VS Code Marketplace
+        run: npx --yes @vscode/vsce@4 publish --oidc --skip-duplicate --packagePath artifacts/*.vsix
+
+      # Open VSX (for Cursor, VSCodium and other VS Code forks) needs a token. Secrets cannot appear
+      # in "if:", so this step says whether it is set.
+      - name: Is Open VSX set up
+        id: ovsx
+        env:
+          SET: ${{ secrets.OVSX_PAT != '' }}
+        run: echo "set=$SET" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to Open VSX
+        if: steps.ovsx.outputs.set == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx@1 publish --skip-duplicate --packagePath artifacts/*.vsix -p "$OVSX_PAT"

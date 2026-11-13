@@ -248,8 +248,10 @@ Releases are automatic. Every push to `master` is built and tested by `.github/w
 
 1. works out the next version from the commit messages since the last release
 2. publishes both NuGet packages to nuget.org from the GitHub environment `production`
-3. packages the VS Code extension with the same version, and publishes it when the marketplace tokens are set
+3. packages the VS Code extension with the same version
 4. tags the commit `vX.Y.Z` and creates a GitHub release with notes and the packages attached
+
+A third job then publishes the extension from that release to the VS Code Marketplace, and to Open VSX when its token is set.
 
 | Commit message starts with | Version change | Example |
 | --- | --- | --- |
@@ -257,17 +259,19 @@ Releases are automatic. Every push to `master` is built and tested by `.github/w
 | `feat:` | minor | 0.3.1 to 0.4.0 |
 | anything else | patch | 0.3.1 to 0.3.2 |
 
-Both packages, `Co.Revington.Sightline` and `Co.Revington.Sightline.Hosting`, are released together with the same version. To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Directory.Build.props`. To release without a code change, start the workflow by hand from the Actions tab. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested on Linux, Windows and macOS by `.github/workflows/ci.yml`, get a comment with what they do to the map, and never publish.
+Both packages, `Co.Revington.Sightline` and `Co.Revington.Sightline.Hosting`, are released together with the same version. To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Directory.Build.props`. To release without a code change, start the workflow by hand from the Actions tab. To publish only the extension of the latest release again, for example after a marketplace was down, start it by hand with **Only publish the VS Code extension of the latest release** ticked. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested on Linux, Windows and macOS by `.github/workflows/ci.yml`, get a comment with what they do to the map, and never publish.
 
 ### Publishing setup
 
-NuGet publishing uses nuget.org trusted publishing, so no API key is stored anywhere. Three settings have to agree:
+nuget.org and the VS Code Marketplace both use trusted publishing, so no API key or token for them is stored anywhere. These settings have to agree:
 
 | Where | Setting | Value |
 | --- | --- | --- |
 | nuget.org, Trusted Publishing policy | Repository owner, repository | `ravindu-rev`, `sightline` |
 | nuget.org, Trusted Publishing policy | Workflow file, environment | `release.yml`, `production` |
 | GitHub, repository variable `NUGET_USER` | nuget.org user name that created the policy | `revington.co` |
+| VS Code Marketplace, publisher `revington`, Trusted Publishing policy | Repository owner, repository | `ravindu-rev`, `sightline` |
+| VS Code Marketplace, publisher `revington`, Trusted Publishing policy | Workflow file, environment | `release.yml`, `production` |
 
 The GitHub environment `production` only accepts deployments from `master`. If `NUGET_USER` is empty, the workflow still builds and tests every push but skips the release and says why.
 
@@ -275,6 +279,5 @@ Optional, each one switched on by adding it in the repository's settings:
 
 | GitHub setting | What it turns on |
 | --- | --- |
-| Secret `VSCE_PAT` | Publishing the extension to the VS Code Marketplace (an Azure DevOps token with Marketplace "Manage" scope, for publisher `revington`). |
 | Secret `OVSX_PAT` | Publishing the extension to Open VSX, for Cursor, VSCodium and other VS Code forks. |
 | Variable `CF_ANALYTICS_TOKEN` | Cloudflare Web Analytics on the website (no cookies). |
