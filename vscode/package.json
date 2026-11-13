@@ -1,6 +1,6 @@
 {
   "name": "sightline",
-  "displayName": "Sightline",
+  "displayName": "Sightline for .NET",
   "description": "A live, editable map of your .NET solution beside your code: projects, dependency injection, HTTP endpoints, request flows and problems.",
   "version": "0.0.0",
   "publisher": "revington",
