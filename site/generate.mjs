@@ -64,7 +64,9 @@ function buildLandingPage(version) {
   // sightline.schema.json: editors fetch it to suggest the settings in sightline.json.
   // badge.svg: the "map: Sightline" badge for READMEs that link to an exported map.
   // robots.txt: lets every crawler in, AI crawlers included, and points to the sitemap.
-  for (const name of ['site.css', 'site.js', 'sightline.schema.json', 'badge.svg', 'robots.txt']) fs.copyFileSync(path.join(site, name), path.join(out, name));
+  // googled757bf8c79e59d8b.html: shows Google Search Console that the site is ours. Removing it ends the verification.
+  const files = ['site.css', 'site.js', 'sightline.schema.json', 'badge.svg', 'robots.txt', 'googled757bf8c79e59d8b.html'];
+  for (const name of files) fs.copyFileSync(path.join(site, name), path.join(out, name));
   fs.cpSync(path.join(site, 'fonts'), path.join(out, 'fonts'), { recursive: true });
   fs.copyFileSync(path.join(root, 'assets', 'icon.png'), path.join(out, 'icon.png'));
   if (fs.existsSync(path.join(root, 'assets', 'og.png'))) fs.copyFileSync(path.join(root, 'assets', 'og.png'), path.join(out, 'og.png'));
