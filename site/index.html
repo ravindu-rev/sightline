@@ -4,9 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sightline, a live map of your .NET solution</title>
-  <meta name="description" content="Sightline reads a .NET solution and draws how it fits together: projects, dependency injection, endpoints and the path of every request. The map updates while you edit. Free and open source.">
+  <meta name="description" content="A live map of your .NET solution: projects, dependency injection, ASP.NET Core endpoints and request flows, updated as you edit. Free and open source.">
+  <meta name="robots" content="max-image-preview:large">
   <link rel="canonical" href="https://sightline.revington.co/">
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sightline">
   <meta property="og:title" content="Sightline, a live map of your .NET solution">
   <meta property="og:description" content="See projects, dependency injection, endpoints and request flows in one page that updates while you edit. Try the live demo in your browser.">
   <meta property="og:url" content="https://sightline.revington.co/">
@@ -19,6 +21,62 @@
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="preload" href="fonts/barlow-semi-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="site.css">
+  <!-- What this page is about, for search engines and AI assistants (schema.org). The WebSite name is the site name search results show. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://sightline.revington.co/#app",
+        "name": "Sightline",
+        "alternateName": "Co.Revington.Sightline",
+        "description": "Sightline reads a .NET solution and draws how it fits together: projects, dependency injection, endpoints and the path of every request. The map updates while you edit.",
+        "url": "https://sightline.revington.co/",
+        "image": "https://sightline.revington.co/og.png",
+        "screenshot": "https://sightline.revington.co/og.png",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Windows, macOS, Linux",
+        "softwareRequirements": ".NET 10 SDK or newer",
+        "softwareVersion": "{{version}}",
+        "downloadUrl": "https://www.nuget.org/packages/Co.Revington.Sightline",
+        "license": "https://github.com/ravindu-rev/sightline/blob/master/LICENSE",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "featureList": [
+          "Map of projects, NuGet packages, namespaces and types",
+          "Dependency injection registrations and their lifetimes",
+          "HTTP endpoints: controllers, minimal APIs, SignalR hubs and gRPC services",
+          "The path of each request through handlers, services and repositories to the database and outbound HTTP calls",
+          "Updates while you edit, before the file is saved",
+          "Checks for captive dependencies, missing registrations, dependency cycles and layer rules",
+          "Requests, SQL and HTTP calls from the running app",
+          "VS Code extension, MCP server for AI assistants, GitHub Action for pull requests, and maps exported as static websites"
+        ],
+        "author": { "@id": "https://sightline.revington.co/#publisher" },
+        "publisher": { "@id": "https://sightline.revington.co/#publisher" },
+        "sameAs": [
+          "https://github.com/ravindu-rev/sightline",
+          "https://www.nuget.org/packages/Co.Revington.Sightline",
+          "https://marketplace.visualstudio.com/items?itemName=revington.sightline"
+        ]
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://sightline.revington.co/#publisher",
+        "name": "Revington Corporations"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://sightline.revington.co/#website",
+        "url": "https://sightline.revington.co/",
+        "name": "Sightline",
+        "inLanguage": "en",
+        "publisher": { "@id": "https://sightline.revington.co/#publisher" }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
