@@ -1,0 +1,33 @@
+# Sightline
+
+> Sightline is a free, open-source (MIT) tool for .NET developers. It reads a C# solution with Roslyn and draws a live map of it in the browser: projects and NuGet packages, namespaces and types, dependency injection registrations and their lifetimes, HTTP endpoints, and the path each request takes through handlers, services and repositories down to the database and outbound HTTP calls. The map updates while you edit the code. Latest version: {{version}}.
+
+- Try it without installing anything: run `dnx Co.Revington.Sightline` in a folder with a `.sln`. It needs the .NET 10 SDK or newer. The map opens in the browser, by default at `http://localhost:5210`.
+- Set it up for a team: `dnx Co.Revington.Sightline init` pins the tool in `dotnet-tools.json` and writes `sightline.json`. Teammates then run `dotnet tool restore` once, and `dotnet sightline`.
+- Commands: `sightline [path]` opens the map. `sightline check` lists problems and exits with 1 when there are errors, for CI. `sightline export --out <dir>` writes the map as a static website. `sightline diff --base <ref>` shows what a change does to the map. `sightline mcp` serves the map to AI assistants over the Model Context Protocol.
+- Problems it finds as you type: a singleton that holds a scoped service (a captive dependency), a service nobody registered, services that need each other, a project that breaks the layer rules in `sightline.json`, and registrations nothing asks for.
+- The `Co.Revington.Sightline.Hosting` package opens the map beside an app on every Debug run, and adds what the running app does: its real registrations and endpoints, each request with its SQL and outbound HTTP calls, and "Try it" on each endpoint. Release builds get nothing from it.
+- Also: a VS Code extension, a GitHub Action that comments on pull requests, and tours that walk a new teammate through a solution.
+- Limits: C# in SDK-style projects only. Reading code does not follow reflection, assembly scanning or generated code; with the Hosting package, the running app fills those gaps for registrations and endpoints.
+- Privacy: it runs on your machine and sends nothing anywhere.
+
+## Docs
+
+- [Full documentation](https://sightline.revington.co/llms-full.txt): the README as Markdown: commands and options, checks, settings, the running app, the views, editing, exported maps, limits and safety
+- [Hosting package](https://raw.githubusercontent.com/ravindu-rev/sightline/master/src/Co.Revington.Sightline.Hosting/README.md): how `Co.Revington.Sightline.Hosting` behaves in an app
+- [VS Code extension](https://raw.githubusercontent.com/ravindu-rev/sightline/master/vscode/README.md): the extension's commands and settings
+- [Settings schema](https://sightline.revington.co/sightline.schema.json): JSON schema for `sightline.json`
+
+## Packages and source
+
+- [Co.Revington.Sightline on NuGet](https://www.nuget.org/packages/Co.Revington.Sightline): the tool, which is also an MCP server package
+- [Co.Revington.Sightline.Hosting on NuGet](https://www.nuget.org/packages/Co.Revington.Sightline.Hosting): starts the map beside your app
+- [VS Code extension](https://marketplace.visualstudio.com/items?itemName=revington.sightline)
+- [GitHub Action](https://github.com/ravindu-rev/sightline-action): comments on each pull request with what it changes on the map
+- [Source code on GitHub](https://github.com/ravindu-rev/sightline)
+- [Release notes](https://github.com/ravindu-rev/sightline/releases)
+
+## Optional
+
+- [Live demo](https://sightline.revington.co/demo/): the real interface, running in the browser on a recording of the sample shop solution; needs JavaScript
+- [Map of dotnet/eShop](https://sightline.revington.co/explore/eshop/): Sightline's exported map of a 28-project open-source solution; needs JavaScript

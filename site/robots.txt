@@ -1,0 +1,18 @@
+# robots.txt for https://sightline.revington.co/
+#
+# Everything on this site may be read by search engines and by AI crawlers and assistants:
+# for search results, for answers that quote or link it, and for training. That includes
+# GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot,
+# Google-Extended, Applebot-Extended and CCBot. No crawler has a group of its own, so they all
+# follow the "*" group below. Keep it that way: a crawler named in its own group would ignore
+# any rule added to "*" later.
+#
+# Content-Signal says the same in the form of Cloudflare's Content Signals Policy.
+#
+# For AI tools: a summary with links is at /llms.txt, and the full documentation at /llms-full.txt.
+
+User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+Allow: /
+
+Sitemap: https://sightline.revington.co/sitemap.xml

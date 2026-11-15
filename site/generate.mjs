@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the website into _site/ (or --out <dir>):
 //
-//   1. the landing page, from site/
+//   1. the landing page, from site/, with robots.txt, sitemap.xml, llms.txt and llms-full.txt for crawlers
 //   2. a demo made of the tool's real UI files (src/.../wwwroot), with site/demo/demo-api.js
 //      taking the place of the server
 //   3. a recording for that demo, taken from the real tool running on samples/Shop
@@ -29,6 +29,8 @@ const out = path.resolve(root, option('--out', '_site'));
 const site = path.join(root, 'site');
 const project = 'src/Co.Revington.Sightline';
 const sample = 'samples/Shop/Shop.sln';
+const SITE_URL = 'https://sightline.revington.co/';
+const REPOSITORY_URL = 'https://github.com/ravindu-rev/sightline';
 
 // The one code edit the demo can replay. It is typed into GetOrderHandler.Handle while the
 // flow of this endpoint is on screen, so a new step visibly appears.
@@ -61,7 +63,10 @@ function buildLandingPage(version) {
 
   // sightline.schema.json: editors fetch it to suggest the settings in sightline.json.
   // badge.svg: the "map: Sightline" badge for READMEs that link to an exported map.
-  for (const name of ['site.css', 'site.js', 'sightline.schema.json', 'badge.svg']) fs.copyFileSync(path.join(site, name), path.join(out, name));
+  // robots.txt: lets every crawler in, AI crawlers included, and points to the sitemap.
+  // googled757bf8c79e59d8b.html: shows Google Search Console that the site is ours. Removing it ends the verification.
+  const files = ['site.css', 'site.js', 'sightline.schema.json', 'badge.svg', 'robots.txt', 'googled757bf8c79e59d8b.html'];
+  for (const name of files) fs.copyFileSync(path.join(site, name), path.join(out, name));
   fs.cpSync(path.join(site, 'fonts'), path.join(out, 'fonts'), { recursive: true });
   fs.copyFileSync(path.join(root, 'assets', 'icon.png'), path.join(out, 'icon.png'));
   if (fs.existsSync(path.join(root, 'assets', 'og.png'))) fs.copyFileSync(path.join(root, 'assets', 'og.png'), path.join(out, 'og.png'));
@@ -75,6 +80,40 @@ function buildLandingPage(version) {
     html = html.replace('</body>', `  <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${token}"}'></script>\n</body>`);
   }
   fs.writeFileSync(path.join(out, 'index.html'), html);
+
+  // For AI assistants (https://llmstxt.org): llms.txt is a summary with links, written by hand, so keep
+  // site/llms.txt in step with README.md. llms-full.txt is the README itself.
+  fs.writeFileSync(path.join(out, 'llms.txt'), fs.readFileSync(path.join(site, 'llms.txt'), 'utf8').replaceAll('{{version}}', version));
+  fs.writeFileSync(path.join(out, 'llms-full.txt'), readme());
+  fs.writeFileSync(path.join(out, 'sitemap.xml'), sitemap(version));
+}
+
+/** README.md, with its relative links made absolute: on the website they would point nowhere. */
+function readme() {
+  return fs.readFileSync(path.join(root, 'README.md'), 'utf8')
+    .replace(/\]\((?!https?:|mailto:|#)([^)\s]+)\)/g, `](${REPOSITORY_URL}/blob/master/$1)`);
+}
+
+/** The pages for search engines, each with the day it last changed. */
+function sitemap(version) {
+  const day = (...args) => {
+    try {
+      return execFileSync('git', ['log', '-1', '--format=%cs', ...args],
+        { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      return '';    // no such tag yet
+    }
+  };
+  // The landing page shows the released version, and the eShop map is drawn by that release.
+  const released = day(`v${version}`, '--');
+  const pages = [
+    ['', [released, day('--', 'site')].sort().at(-1)],
+    ['explore/eshop/', released],                    // written by .github/workflows/website.yml, after this script
+  ];
+
+  const urls = pages.map(([page, lastmod]) =>
+    `  <url>\n    <loc>${SITE_URL}${page}</loc>\n${lastmod ? `    <lastmod>${lastmod}</lastmod>\n` : ''}  </url>\n`);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('')}</urlset>\n`;
 }
 
 // -------------------------------------------------------------------- demo
@@ -268,7 +307,7 @@ function assertNoLocalPaths(recording) {
 function serve(port) {
   const types = {
     '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json',
-    '.png': 'image/png', '.woff2': 'font/woff2', '.md': 'text/plain', '.txt': 'text/plain',
+    '.png': 'image/png', '.woff2': 'font/woff2', '.md': 'text/plain', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml',
   };
 
   http.createServer((request, response) => {
