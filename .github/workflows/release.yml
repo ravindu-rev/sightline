@@ -25,15 +25,29 @@ concurrency:
 permissions:
   contents: read
 
+# Every job runs on the self-hosted runner. The steps are bash, on Windows too (Git Bash, put first on
+# the PATH by the "Use Git Bash" step).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     if: ${{ !inputs.extension }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       release: ${{ steps.plan.outputs.release }}
       version: ${{ steps.plan.outputs.version }}
 
     steps:
+      # On Windows the first bash on the PATH can be WSL's bash.exe in System32, which cannot run these steps.
+      - name: Use Git Bash
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Git\bin\bash.exe")) { throw 'Install Git for Windows on this runner: the steps run in Git Bash.' }
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\bin"
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # all commits and tags: the next version is worked out from them
@@ -65,7 +79,7 @@ jobs:
   publish:
     needs: test
     if: needs.test.outputs.release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: production
       url: https://www.nuget.org/packages/Co.Revington.Sightline/${{ needs.test.outputs.version }}
@@ -74,6 +88,13 @@ jobs:
       id-token: write     # prove to nuget.org which repository and environment is publishing (no stored API key)
 
     steps:
+      - name: Use Git Bash
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Git\bin\bash.exe")) { throw 'Install Git for Windows on this runner: the steps run in Git Bash.' }
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\bin"
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # the release notes list the commits since the last tag
@@ -81,6 +102,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+
+      # npm and vsce package the VS Code extension below.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Write the release notes
         env:
@@ -134,7 +160,7 @@ jobs:
   extension:
     needs: [test, publish]
     if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.extension) }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: production
       url: https://marketplace.visualstudio.com/items?itemName=revington.sightline
@@ -143,11 +169,26 @@ jobs:
       id-token: write     # prove to the VS Code Marketplace which repository and environment is publishing (no stored token)
 
     steps:
+      - name: Use Git Bash
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Git\bin\bash.exe")) { throw 'Install Git for Windows on this runner: the steps run in Git Bash.' }
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\bin"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # This job checks nothing out, and a self-hosted runner keeps the workspace of the publish job,
+      # so artifacts/ is emptied first: only the extension downloaded here gets published.
       - name: Download the extension from the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.test.outputs.version }}   # empty when only the extension is published: the latest release
-        run: gh release download ${VERSION:+"v$VERSION"} --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir artifacts
+        run: |
+          rm -rf artifacts
+          gh release download ${VERSION:+"v$VERSION"} --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir artifacts
 
       # Trusted publishing (vsce 4 or later): the Marketplace checks this run against the policy of
       # publisher "revington" (repository, "release.yml", "production") and hands out a short-lived token.
