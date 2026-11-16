@@ -19,8 +19,12 @@ internal sealed class FileWatcher : IDisposable
         ".vite", ".angular", ".vercel", "coverage", ".nyc_output", "storybook-static", "tmp", "temp",
     };
 
+    /// A new folder with more entries than this loads everything again instead of being walked.
+    const int MaxWalk = 20_000;
+
     readonly List<FileSystemWatcher> _watchers = [];
     readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _newFolders = new(StringComparer.OrdinalIgnoreCase);
     readonly Func<string, bool> _accepts;
     readonly Func<bool> _churning;
     readonly Action<IReadOnlyList<string>> _onChanges;
@@ -44,10 +48,10 @@ internal sealed class FileWatcher : IDisposable
                 InternalBufferSize = 64 * 1024,
                 NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
             };
-            w.Changed += (_, e) => Touch(e.FullPath, false);
-            w.Created += (_, e) => Touch(e.FullPath, false);
-            w.Deleted += (_, e) => Touch(e.FullPath, true);
-            w.Renamed += (_, e) => { Touch(e.OldFullPath, true); Touch(e.FullPath, false); };
+            w.Changed += (_, e) => Touch(root, e.FullPath, gone: false);
+            w.Created += (_, e) => Touch(root, e.FullPath, gone: false, appeared: true);
+            w.Deleted += (_, e) => Touch(root, e.FullPath, gone: true);
+            w.Renamed += (_, e) => { Touch(root, e.OldFullPath, gone: true); Touch(root, e.FullPath, gone: false, appeared: true); };
             w.Error += (_, _) => Add(Rescan);      // buffer overflow: events were lost
             w.EnableRaisingEvents = true;
             _watchers.Add(w);
@@ -59,9 +63,11 @@ internal sealed class FileWatcher : IDisposable
         (folder.Equals("obj", StringComparison.OrdinalIgnoreCase) && file.Equals("project.assets.json", StringComparison.OrdinalIgnoreCase))
         || (folder.Equals("node_modules", StringComparison.OrdinalIgnoreCase) && file is ".package-lock.json" or ".modules.yaml" or ".yarn-integrity");
 
-    void Touch(string path, bool gone)
+    /// appeared: the path was created or renamed into place (Changed also fires for folders whose files change).
+    /// Folder names count from the watched root down: a repository may itself sit in a folder called bin or temp.
+    void Touch(string root, string path, bool gone, bool appeared = false)
     {
-        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parts = Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var file = parts[^1];
 
         for (var i = 0; i < parts.Length - 1; i++)
@@ -69,29 +75,70 @@ internal sealed class FileWatcher : IDisposable
         if (SkipDirs.Contains(file)) return;
 
         if (_accepts(path)) Add(path);
-        else if (gone && Path.GetExtension(file).Length == 0 && !(_churning() && parts.Any(Churn.Contains))) Add(Rescan);   // a folder was removed or renamed
+        else if (gone && Path.GetExtension(file).Length == 0 && !Churning(parts)) Add(Rescan);   // a folder was removed or renamed
+        else if (appeared && !Churning(parts) && Directory.Exists(path)) Add(path, folder: true);   // a folder appeared
     }
 
-    void Add(string path)
+    bool Churning(string[] parts) => _churning() && parts.Any(Churn.Contains);
+
+    void Add(string path, bool folder = false)
     {
         lock (_pending)
         {
-            _pending.Add(path);
+            (folder ? _newFolders : _pending).Add(path);
             _timer.Change(_quietMs, Timeout.Infinite);
         }
     }
 
     void Flush()
     {
-        List<string> batch;
+        List<string> batch, folders;
         lock (_pending)
         {
-            if (_pending.Count == 0) return;
+            if (_pending.Count == 0 && _newFolders.Count == 0) return;
             batch = [.. _pending];
+            folders = [.. _newFolders];
             _pending.Clear();
+            _newFolders.Clear();
         }
-        _onChanges(batch);
+        if (folders.Count > 0) batch = [.. batch.Union(FilesIn(folders), StringComparer.OrdinalIgnoreCase)];
+        if (batch.Count > 0) _onChanges(batch);
     }
+
+    /// The files that matter in folders that just appeared. A folder moved in raises one event for the folder
+    /// and none for its files, and Linux starts watching a new folder only once it hears of it, so files written
+    /// into it straight away (a checkout, a new package with its package.json) raise no event of their own.
+    /// Links are not followed. A folder too big to walk loads everything again instead.
+    List<string> FilesIn(List<string> folders)
+    {
+        var found = new List<string>();
+        var walk = new Stack<string>(folders.Where(f => !folders.Any(other => IsUnder(f, other))));
+        var seen = 0;
+        while (walk.Count > 0)
+        {
+            List<FileSystemInfo> entries;
+            try { entries = [.. new DirectoryInfo(walk.Pop()).EnumerateFileSystemInfos()]; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }   // gone again, or not readable
+
+            foreach (var entry in entries)
+            {
+                if (++seen > MaxWalk) return [Rescan];
+                if (entry is DirectoryInfo dir)
+                {
+                    if (!dir.Attributes.HasFlag(FileAttributes.ReparsePoint) && !SkipDirs.Contains(dir.Name) && !(_churning() && Churn.Contains(dir.Name)))
+                        walk.Push(dir.FullName);
+                }
+                else if (!entry.Attributes.HasFlag(FileAttributes.ReparsePoint) && _accepts(entry.FullName))
+                {
+                    found.Add(entry.FullName);
+                }
+            }
+        }
+        return found;
+    }
+
+    static bool IsUnder(string path, string folder) =>
+        path.Length > folder.Length + 1 && path[folder.Length] is '/' or '\\' && path.StartsWith(folder, StringComparison.OrdinalIgnoreCase);
 
     public void Dispose()
     {

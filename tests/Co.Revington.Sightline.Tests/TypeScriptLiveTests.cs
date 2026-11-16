@@ -103,6 +103,27 @@ public sealed class TypeScriptLiveTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_package_that_arrives_as_a_whole_folder_joins_the_map()
+    {
+        // A folder moved in raises one event, for the folder: none for the files in it. On Linux a new folder
+        // is only watched once it is reported, so files written into it right away go unreported the same way.
+        var staging = Directory.CreateTempSubdirectory("sightline-ts-moved-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(staging, "package.json"), """{ "name": "moved" }""");
+            Directory.CreateDirectory(Path.Combine(staging, "src"));
+            File.WriteAllText(Path.Combine(staging, "src", "index.ts"), "export class Moved {}\n");
+            Directory.Move(staging, Path.Combine(_dir, "moved"));
+
+            await Eventually(g => g.Nodes.ContainsKey("proj:npm:moved") && g.Nodes.Values.Any(n => n.Name == "Moved"), "the package that was moved in");
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Unsaved_text_survives_a_reload_of_its_language_and_goes_when_discarded()
     {
         var file = Path.Combine(_dir, "src", "greeter.ts");
