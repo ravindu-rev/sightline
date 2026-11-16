@@ -59,7 +59,7 @@ export class Sidebar {
     const shown = rows.slice(0, MAX_ROWS);
     let html = shown.join('');
     const failed = this.store.status.state === 'error' && !this.store.projects.length;
-    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : failed ? 'The solution did not load; the message is on the map.' : EMPTY[this.tab]}</p>`;
+    if (!rows.length) html = `<p class="none">${this.query ? 'Nothing matches this filter.' : failed ? 'The code did not load; the message is on the map.' : EMPTY[this.tab]}</p>`;
     else if (rows.length > MAX_ROWS) html += `<p class="none">${rows.length - MAX_ROWS} more. Type in the filter to narrow the list.</p>`;
     this.listEl.innerHTML = html;
     this.setCurrent(this.current);
@@ -126,7 +126,7 @@ export class Sidebar {
 
       out.push(`<h3 class="${s.zoneClass(p.id)}">${esc(p.name)}</h3>`);
       out.push(`<button class="row" data-id="${esc(p.id)}"><span class="chip">${esc(p.meta.projectKind)}</span>` +
-        `<span class="grow dim">${esc(p.meta.tfm ?? '')}</span><span class="dim">${esc(plural(s.childrenOf(p.id, 'type').length, 'type'))}</span></button>`);
+        `<span class="grow dim">${esc(p.meta.tfm ?? p.meta.language ?? '')}</span><span class="dim">${esc(plural(s.childrenOf(p.id, 'type').length, 'type'))}</span></button>`);
       for (const e of this.query ? hits : packages) {
         const k = s.node(e.target);
         if (k) out.push(`<button class="row" data-id="${esc(k.id)}"><span class="grow">${esc(k.name)}</span><span class="dim">${esc(e.label ?? '')}</span></button>`);
@@ -137,10 +137,10 @@ export class Sidebar {
 }
 
 const EMPTY = {
-  endpoints: 'No HTTP endpoints found in this solution.',
+  endpoints: 'No HTTP endpoints found in this code.',
   services: 'No dependency injection registrations found.',
   types: 'No types found.',
-  projects: 'No C# projects loaded.',
+  projects: 'No projects loaded.',
 };
 
-const lastPart = (ns) => String(ns ?? '').split('.').pop();
+const lastPart = (ns) => String(ns ?? '').split(/[./]/).pop();

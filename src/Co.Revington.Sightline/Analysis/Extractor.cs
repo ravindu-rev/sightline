@@ -656,7 +656,7 @@ internal static partial class Extractor
             }
             else if (owner?.Name is "HttpClient" or "HttpClientJsonExtensions" or "HttpMessageInvoker")
             {
-                _p.Facts.Refs.Add(new RefFact(_owner, "ext:http", "http", line, def.Name));
+                _p.Facts.Refs.Add(new RefFact(_owner, "ext:http", "http", line, def.Name, Request: HttpRequestOf(node, def)));
             }
             else if (owner?.Name == "DbContext" && def.Name is "SaveChanges" or "SaveChangesAsync")
             {
@@ -666,6 +666,68 @@ internal static partial class Extractor
             {
                 _p.Facts.Refs.Add(new RefFact(_owner, DbContextOf(node), "db", line, method.TypeArguments[0].Name));
             }
+        }
+
+        /// The request an HttpClient call sends: http.PostAsJsonAsync("api/orders", ...), GetAsync($"orders/{id}"),
+        /// SendAsync(new HttpRequestMessage(HttpMethod.Put, url)). Null when the address is not in the code.
+        HttpCall? HttpRequestOf(InvocationExpressionSyntax node, IMethodSymbol def)
+        {
+            var args = node.ArgumentList.Arguments;
+            if (args.Count == 0) return null;
+            var verb = def.Name switch
+            {
+                "GetAsync" or "GetStringAsync" or "GetStreamAsync" or "GetByteArrayAsync" or "GetFromJsonAsync" or "GetFromJsonAsAsyncEnumerable" => "GET",
+                "PostAsync" or "PostAsJsonAsync" => "POST",
+                "PutAsync" or "PutAsJsonAsync" => "PUT",
+                "PatchAsync" or "PatchAsJsonAsync" => "PATCH",
+                "DeleteAsync" or "DeleteFromJsonAsync" => "DELETE",
+                _ => null,
+            };
+            if (verb is not null) return UrlOf(args[0].Expression, 0) is { } url ? new HttpCall(verb, url) : null;
+            if (def.Name is not ("SendAsync" or "Send")) return null;
+
+            var message = MessageCreation(args[0].Expression, 0);
+            if (message?.ArgumentList is not { Arguments.Count: >= 2 } a) return null;
+            var method = a.Arguments[0].Expression switch
+            {
+                MemberAccessExpressionSyntax m => m.Name.Identifier.ValueText.ToUpperInvariant(),
+                BaseObjectCreationExpressionSyntax { ArgumentList.Arguments.Count: > 0 } c => Const(c.ArgumentList.Arguments[0].Expression)?.ToUpperInvariant(),
+                _ => null,
+            };
+            return UrlOf(a.Arguments[1].Expression, 0) is { } target ? new HttpCall(method ?? "*", target) : null;
+        }
+
+        BaseObjectCreationExpressionSyntax? MessageCreation(ExpressionSyntax e, int depth)
+        {
+            if (depth > 4) return null;
+            if (e is BaseObjectCreationExpressionSyntax creation
+                && _p.Model.GetTypeInfo(creation, _p.Ct).Type?.Name == "HttpRequestMessage") return creation;
+            if (e is IdentifierNameSyntax id && _p.Model.GetSymbolInfo(id, _p.Ct).Symbol is ILocalSymbol local
+                && local.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(_p.Ct) is VariableDeclaratorSyntax { Initializer.Value: { } init })
+                return MessageCreation(init, depth + 1);
+            return null;
+        }
+
+        /// An address as written, with "*" for the parts worked out at run time.
+        string? UrlOf(ExpressionSyntax e, int depth)
+        {
+            if (depth > 6) return null;
+            if (Const(e) is { } text) return text;
+            switch (e)
+            {
+                case ParenthesizedExpressionSyntax p:
+                    return UrlOf(p.Expression, depth + 1);
+                case InterpolatedStringExpressionSyntax i:
+                    var sb = new StringBuilder();
+                    foreach (var part in i.Contents)
+                        sb.Append(part is InterpolatedStringTextSyntax t ? t.TextToken.ValueText : Const(((InterpolationSyntax)part).Expression) ?? "*");
+                    return sb.ToString();
+                case BinaryExpressionSyntax b when b.IsKind(SyntaxKind.AddExpression):
+                    return (UrlOf(b.Left, depth + 1) ?? "*") + (UrlOf(b.Right, depth + 1) ?? "*");
+                case BaseObjectCreationExpressionSyntax { ArgumentList.Arguments.Count: > 0 } o when _p.Model.GetTypeInfo(o, _p.Ct).Type?.Name == "Uri":
+                    return UrlOf(o.ArgumentList.Arguments[0].Expression, depth + 1);
+            }
+            return null;
         }
 
         /// sp.GetRequiredService<IFoo>() and sp.GetService(typeof(IFoo)) ask for IFoo; a Type worked out

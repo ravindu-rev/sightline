@@ -1,0 +1,10 @@
+{
+  "name": "sightline-typescript-reader",
+  "private": true,
+  "description": "Reads JavaScript and TypeScript for Sightline with the TypeScript compiler. Started by the tool; speaks JSON lines on stdin and stdout.",
+  "type": "module",
+  "main": "main.mjs",
+  "engines": {
+    "node": ">=18"
+  }
+}

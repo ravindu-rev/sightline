@@ -43,7 +43,7 @@ internal static class Cli
     const int DefaultPort = 5210;
 
     static string Help => $$"""
-        Sightline {{ToolInfo.Version}}: a live, editable map of a .NET solution
+        Sightline {{ToolInfo.Version}}: a live, editable map of your code, in C#, TypeScript and JavaScript
 
         Usage:
           sightline [path] [options]          Open the map
@@ -53,9 +53,10 @@ internal static class Cli
           sightline diff [path] --base <ref>  What a change does to the map, for pull requests
           sightline mcp [path]                Serve the map to AI assistants (Model Context Protocol)
 
-        The path is a .sln, .slnx or .csproj file, or a folder. Without it, Sightline opens
-        the solution named in the nearest sightline.json, or the nearest solution in this
-        folder or above it.
+        The path is a .sln, .slnx, .csproj or package.json file, or a folder. Without it, Sightline
+        opens what the nearest sightline.json names, or the nearest solution in this folder or
+        above it, or the npm packages here. JavaScript and TypeScript under the folder of a
+        solution join its map; reading them needs Node.js 18 or newer.
 
         Options:
           --port <n>          Port for the map page (default 5210, or the next free one)
@@ -366,21 +367,21 @@ internal static class Cli
         if (fullPath is not null)
         {
             resolved = ResolveTarget(fullPath);
-            if (resolved is null) return Fail($"No .sln, .slnx or .csproj file found at {path}.");
+            if (resolved is null) return Fail($"No .sln, .slnx, .csproj or package.json file found at {path}.");
         }
         else if (config?.Solution is { } solution)
         {
-            if (!File.Exists(solution))
+            if (!File.Exists(solution) && !Directory.Exists(solution))
                 return Fail($"{config.File}: \"solution\" is {Path.GetRelativePath(config.Dir, solution)}, which does not exist.");
             resolved = solution;
         }
         else
         {
             var here = Directory.GetCurrentDirectory();
-            resolved = FindNearestSolution(here) ?? ResolveTarget(here);
+            resolved = FindNearestSolution(here) ?? ResolveTarget(here) ?? (config is null ? null : ResolveTarget(config.Dir)) ?? FindNearestPackageRoot(here);
             if (resolved is null)
-                return Fail("No .sln, .slnx or .csproj file found here. Give the path to a solution, " +
-                            "or run \"sightline init\" in the folder that holds it.");
+                return Fail("No .sln, .slnx, .csproj or package.json file found here. Give the path to one, " +
+                            "or run \"sightline init\" in the folder that holds your code.");
         }
 
         target = new SolutionTarget(
@@ -410,6 +411,21 @@ internal static class Cli
         return null;
     }
 
+    /// For code without a solution: the top folder with a package.json, from here up to the top of the
+    /// repository. In a workspace that is its root, so the map holds every package of it.
+    internal static string? FindNearestPackageRoot(string start)
+    {
+        string? found = null;
+        var dir = new DirectoryInfo(start);
+        for (var level = 0; dir is not null && level < 8; level++, dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "package.json"))) found = dir.FullName;
+            var git = Path.Combine(dir.FullName, ".git");
+            if (Directory.Exists(git) || File.Exists(git)) break;
+        }
+        return found is not null && Languages.LanguageSet.HasCode(found) ? found : null;
+    }
+
     static CliCommand ParseInit(string[] args)
     {
         string? folder = null, solution = null;
@@ -428,7 +444,7 @@ internal static class Cli
                     return new ExitCommand(0);
                 case "--solution":
                     solution = Next();
-                    if (solution is null) return Fail("--solution needs a .sln, .slnx or .csproj file.");
+                    if (solution is null) return Fail("--solution needs a .sln, .slnx, .csproj or package.json file, or a folder.");
                     break;
                 case "--vscode":
                     vscode = true;
@@ -472,6 +488,6 @@ internal static class Cli
             .FirstOrDefault();
         if (solution is not null) return solution;
 
-        return Live.LiveSession.FindProjects(path).Any() ? path : null;
+        return Languages.LanguageSet.HasCode(path) ? path : null;
     }
 }

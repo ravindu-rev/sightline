@@ -11,8 +11,8 @@
     },
     "solution": {
       "type": "string",
-      "description": "The .sln, .slnx or .csproj file to open, relative to this file. Without it, Sightline opens the solution in the current folder.",
-      "examples": ["App.sln", "src/App.slnx"]
+      "description": "The .sln, .slnx, .csproj or package.json file, or the folder, to open, relative to this file. Without it, Sightline opens the solution in the current folder, or else this folder.",
+      "examples": ["App.sln", "src/App.slnx", "web/package.json"]
     },
     "exclude": {
       "type": "array",
@@ -92,6 +92,14 @@
       "type": "string",
       "enum": ["vscode", "cursor", "rider", "visualstudio"],
       "description": "The editor that \"Open in editor\" starts. A command of your own goes in the SIGHTLINE_EDITOR environment variable instead, such as \"subl {file}:{line}\"."
+    },
+    "languages": {
+      "type": "array",
+      "description": "The languages to read. Without it, every language found under the folder is read: C# from the solution, and JavaScript and TypeScript from the package.json files below it. \"javascript\" and \"typescript\" mean the same reader.",
+      "items": { "type": "string", "enum": ["csharp", "typescript", "javascript"] },
+      "minItems": 1,
+      "uniqueItems": true,
+      "examples": [["csharp"], ["typescript"]]
     }
   },
   "additionalProperties": false,

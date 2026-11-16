@@ -42,6 +42,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # The tests read JavaScript and TypeScript, which needs Node.js.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Build and test
         run: |
           dotnet restore Co.Revington.Sightline.sln

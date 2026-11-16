@@ -31,7 +31,7 @@ internal static class RuntimeMerge
     public static DocFacts? Registrations(IReadOnlyList<RuntimeApp> apps, IReadOnlyCollection<DocFacts> docs, IReadOnlyList<ProjectFacts> projects)
     {
         if (apps.Count == 0) return null;
-        var assemblies = projects.Select(p => p.AssemblyName).ToHashSet(StringComparer.Ordinal);
+        var assemblies = projects.Where(p => p.AssemblyName.Length > 0).Select(p => p.AssemblyName).ToHashSet(StringComparer.Ordinal);
         var known = docs.SelectMany(d => d.Di)
             .Select(r => (r.ServiceId ?? r.ServiceName, r.ImplId ?? r.ImplName ?? ""))
             .ToHashSet();
@@ -67,7 +67,9 @@ internal static class RuntimeMerge
     public static int Endpoints(Graph g, IReadOnlyList<RuntimeApp> apps, IReadOnlyList<ProjectFacts> projects)
     {
         if (apps.Count == 0) return 0;
-        var byAssembly = projects.ToDictionary(p => p.AssemblyName, p => p, StringComparer.Ordinal);
+        // Only .NET projects have an assembly; running apps report their types under it.
+        var byAssembly = projects.Where(p => p.AssemblyName.Length > 0).GroupBy(p => p.AssemblyName, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var existing = g.Nodes.Values.Where(n => n.Kind == "endpoint").ToList();
         var added = 0;
 

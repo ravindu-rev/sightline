@@ -66,7 +66,6 @@ public sealed class ServerTests(ShopFixture shop) : IClassFixture<ShopFixture>
         var apiProject = new ProjectFacts
         {
             Id = "proj:Api", Name = "Api", AssemblyName = "Api", Path = "Api.csproj", Dir = ".", Kind = "web",
-            RoslynId = Microsoft.CodeAnalysis.ProjectId.CreateNewId(),
         };
         projects.Add(apiProject);
         var doc = new DocFacts { File = "Program.cs", Project = "proj:Api" };

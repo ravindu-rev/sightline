@@ -24,6 +24,7 @@ internal static class Exporter
             return 2;
         }
 
+        using var _ = session;
         var scrubber = new PathScrubber(OneShot.RepoRoot(session.RootDir));
         var graph = GraphJson(snapshot, session, scrubber);
 

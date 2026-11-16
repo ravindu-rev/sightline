@@ -21,12 +21,14 @@ internal sealed class ProjectFilter
 
     public bool IsEmpty => _patterns.Length == 0;
 
-    public bool Excludes(string projectFile)
+    /// projectFile: the .csproj or package.json. name: the project's name when it is not the file's name,
+    /// as for an npm package ("@shop/api").
+    public bool Excludes(string projectFile, string? name = null)
     {
         if (_patterns.Length == 0) return false;
 
         var relative = Path.GetRelativePath(_baseDir, projectFile).Replace('\\', '/');
-        var candidates = new List<string> { Path.GetFileNameWithoutExtension(projectFile), relative };
+        var candidates = new List<string> { name ?? Path.GetFileNameWithoutExtension(projectFile), relative };
 
         // Every folder on the way to the project, so "tests" matches "tests/App.Tests/App.Tests.csproj".
         for (var slash = relative.IndexOf('/'); slash > 0; slash = relative.IndexOf('/', slash + 1))

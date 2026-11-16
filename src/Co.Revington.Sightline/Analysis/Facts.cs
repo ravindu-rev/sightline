@@ -1,6 +1,43 @@
 namespace Co.Revington.Sightline.Analysis;
 
-// Raw findings from one source file. The graph is assembled from these.
+// Raw findings from one source file. The graph is assembled from these. Every language that Sightline
+// reads produces them: C# through Roslyn (Extractor), TypeScript and JavaScript through the TypeScript
+// compiler (analyzers/typescript), so everything after this point works the same for all of them.
+
+/// Ecosystem: "nuget" or "npm". Direct: listed in the project file itself rather than pulled in by another package.
+internal sealed record PackageRef(string Name, string Version, bool Direct, string Ecosystem = "nuget");
+
+internal sealed class ProjectFacts
+{
+    public required string Id { get; init; }          // graph node id: "proj:Name" for .NET, "proj:npm:name" for npm packages
+    public required string Name { get; init; }
+    public string AssemblyName { get; init; } = "";    // .NET only; what running apps report their types under
+    public required string Path { get; init; }
+    public required string Dir { get; init; }
+    public required string Kind { get; init; }        // .NET: web | worker | exe | test | lib. npm: web | ui | cli | lib
+    public string? Tfm { get; init; }
+
+    /// "C#", "TypeScript" or "JavaScript".
+    public string Language { get; init; } = "C#";
+
+    /// Every project the compiler sees, also those reached through other projects.
+    public List<string> ProjectRefs { get; init; } = [];
+
+    /// The references written in the project file itself.
+    public List<string> WrittenRefs { get; init; } = [];
+
+    /// Type names that the project's Razor files ask for with "@inject Type name", without namespace or generics.
+    public HashSet<string> RazorInjects { get; init; } = [];
+    public List<PackageRef> Packages { get; init; } = [];
+
+    public bool IsDotnet => Language == "C#";
+}
+
+/// An HTTP request that code sends, as far as reading the code can tell. Verb: "GET", "POST", ... or "*".
+/// In a RefFact, Path is the address as written ("https://localhost:5001/api/orders/*", "orders/*"), with "*"
+/// for the parts worked out at run time; Routes.Request turns it into the comparable form: "/api/orders/*"
+/// for a known path, "*/orders/*" when the start of the address is not known (it comes from settings, say).
+internal sealed record HttpCall(string Verb, string Path);
 
 internal sealed record TypeFact(
     string Id, string Name, string Ns, string Kind, string Access, string? ContainerId,
@@ -12,8 +49,9 @@ internal sealed record MemberFact(
     string Access, bool IsStatic, bool IsAbstract, bool IsAsync, int Line, int EndLine);
 
 /// A link from a member (or endpoint key) to another symbol.
-/// Kinds: calls, creates, dispatch, db, http, references, ctor-param.
-internal sealed record RefFact(string From, string To, string Kind, int Line, string? Label = null, string? Via = null);
+/// Kinds: calls, creates, dispatch, db, http, references, ctor-param, lookup, typearg.
+/// Request: for "http", the request it sends, when the address can be read from the code.
+internal sealed record RefFact(string From, string To, string Kind, int Line, string? Label = null, string? Via = null, HttpCall? Request = null);
 
 /// Interface or base method -> the method that implements or overrides it.
 internal sealed record ImplFact(string AbstractId, string ImplId, string Kind);

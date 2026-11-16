@@ -1,0 +1,12 @@
+{
+  "name": "shop-node",
+  "private": true,
+  "description": "The JavaScript and TypeScript side of the Shop sample: a shipping API (Express), an admin API (NestJS), a worker and a web client, which all talk to the C# Shop API next to them.",
+  "workspaces": [
+    "shared",
+    "shipping-api",
+    "admin",
+    "worker",
+    "web"
+  ]
+}

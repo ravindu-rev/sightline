@@ -138,19 +138,7 @@ internal static class EditorLauncher
         return words;
     }
 
-    /// A program on the PATH, with the extensions Windows would try.
-    static string? OnPath(string name)
-    {
-        if (Path.IsPathRooted(name)) return File.Exists(name) ? name : null;
-        var extensions = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat", "" } : [""];
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        foreach (var ext in extensions)
-        {
-            var candidate = Path.Combine(dir.Trim(), name + ext);
-            if (File.Exists(candidate)) return candidate;
-        }
-        return null;
-    }
+    static string? OnPath(string name) => Programs.OnPath(name);
 
     static string? RiderPath()
     {

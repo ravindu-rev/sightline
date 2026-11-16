@@ -74,7 +74,7 @@ internal static class MapDiff
     static async Task<JsonNode> GraphAsync(SolutionTarget target)
     {
         var (session, snapshot) = await OneShot.LoadAsync(target);
-        return Exporter.GraphJson(snapshot, session, new PathScrubber(OneShot.RepoRoot(session.RootDir)));
+        using (session) return Exporter.GraphJson(snapshot, session, new PathScrubber(OneShot.RepoRoot(session.RootDir)));
     }
 
     /// The map at another commit: checked out next to the repository with "git worktree", read, removed.
@@ -104,8 +104,10 @@ internal static class MapDiff
 
             var target = new SolutionTarget(path, config,
                 config is null ? ProjectFilter.None : new ProjectFilter(config.Dir, config.Exclude), head.Restore);
-            var (session, snapshot) = await OneShot.LoadAsync(target);
-            return Exporter.GraphJson(snapshot, session, new PathScrubber(temp));
+            // The checkout has no node_modules; it reads the packages installed in the working tree, so both
+            // sides of the comparison see the same types.
+            var (session, snapshot) = await OneShot.LoadAsync(target, packagesFrom: new Languages.PackageMirror(temp, repo));
+            using (session) return Exporter.GraphJson(snapshot, session, new PathScrubber(temp));
         }
         finally
         {

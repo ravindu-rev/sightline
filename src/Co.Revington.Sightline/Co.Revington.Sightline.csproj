@@ -37,6 +37,11 @@
     <!-- UI files ship next to the tool binary. Pack=false avoids extra "content" copies in the package. -->
     <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" Pack="false" />
 
+    <!-- Readers for languages other than C#, which run in a process of their own: plain JavaScript for
+         Node.js, and the TypeScript compiler they read JavaScript and TypeScript with. Shipped the same way. -->
+    <None Remove="analyzers\**" />
+    <Content Include="analyzers\**" CopyToOutputDirectory="PreserveNewest" Pack="false" />
+
     <!-- Shown on nuget.org -->
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>

@@ -201,7 +201,8 @@ async function open(hash) {
 /** Shows the method, endpoint or type under the cursor on the map. */
 async function reveal() {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'csharp') throw new Error('Put the cursor in a C# file first.');
+  const languages = ['csharp', 'typescript', 'typescriptreact', 'javascript', 'javascriptreact'];
+  if (!editor || !languages.includes(editor.document.languageId)) throw new Error('Put the cursor in a C#, TypeScript or JavaScript file first.');
   const m = await map();
   follow(m);
 

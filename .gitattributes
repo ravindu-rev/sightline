@@ -8,3 +8,9 @@
 
 # Bundled libraries: keep them out of GitHub's language statistics and diffs.
 src/Co.Revington.Sightline/wwwroot/lib/** linguist-vendored
+
+# The TypeScript compiler, exactly as npm ships it (.github/scripts/vendor-typescript.sh): no line ending changes.
+src/Co.Revington.Sightline/analyzers/typescript/vendor/** -text linguist-vendored
+
+# The JavaScript and TypeScript sample is part of the documentation, not of Sightline's own code.
+samples/shop-node/** linguist-documentation

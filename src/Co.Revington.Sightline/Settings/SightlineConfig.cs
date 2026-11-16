@@ -11,7 +11,7 @@ internal sealed class SightlineConfig
     public const string SchemaUrl = "https://sightline.revington.co/sightline.schema.json";
 
     static readonly JsonDocumentOptions Lenient = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
-    static readonly string[] Known = ["$schema", "solution", "exclude", "port", "openBrowser", "restore", "layers", "rules", "checks", "editor"];
+    static readonly string[] Known = ["$schema", "solution", "exclude", "port", "openBrowser", "restore", "layers", "rules", "checks", "editor", "languages"];
 
     public required string File { get; init; }
     public string Dir => Path.GetDirectoryName(File)!;
@@ -28,6 +28,9 @@ internal sealed class SightlineConfig
 
     /// The editor that "Open in editor" starts: vscode, cursor, rider or visualstudio.
     public string? Editor { get; init; }
+
+    /// The languages to read ("csharp", "typescript"), or null for every language found.
+    public IReadOnlyList<string>? Languages { get; init; }
 
     /// Settings that were ignored, worded for the console.
     public IReadOnlyList<string> Warnings { get; init; } = [];
@@ -66,6 +69,7 @@ internal sealed class SightlineConfig
                 throw new ConfigException($"{FileName} must hold a JSON object, such as {{ \"solution\": \"App.sln\" }}.");
 
             string? solution = null, editor = null;
+            List<string>? languages = null;
             int? port = null;
             bool? open = null, restore = null;
             var exclude = new List<string>();
@@ -84,7 +88,7 @@ internal sealed class SightlineConfig
 
                     case "solution":
                         if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
-                            throw Wrong("solution", "the path of a .sln, .slnx or .csproj file, relative to this file");
+                            throw Wrong("solution", "the path of a .sln, .slnx, .csproj or package.json file, or of a folder, relative to this file");
                         solution = Path.GetFullPath(Path.Combine(dir, value.GetString()!));
                         break;
 
@@ -133,6 +137,14 @@ internal sealed class SightlineConfig
                         }
                         break;
 
+                    case "languages":
+                        var names = Co.Revington.Sightline.Languages.LanguageSet.Names;
+                        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0
+                            || value.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || !names.ContainsKey(e.GetString()!.Trim())))
+                            throw Wrong("languages", $"a list of the languages to read, such as [\"csharp\"]; languages are {string.Join(", ", names.Keys)}");
+                        languages = value.EnumerateArray().Select(e => names[e.GetString()!.Trim()]).Distinct().ToList();
+                        break;
+
                     case "editor":
                         // Only known editors: a cloned repository must not choose a program to run.
                         // A command of your own goes in the SIGHTLINE_EDITOR environment variable instead.
@@ -151,7 +163,7 @@ internal sealed class SightlineConfig
             return new SightlineConfig
             {
                 File = file, Solution = solution, Exclude = exclude, Port = port,
-                OpenBrowser = open, Restore = restore, Warnings = warnings, Editor = editor,
+                OpenBrowser = open, Restore = restore, Warnings = warnings, Editor = editor, Languages = languages,
                 Checks = new CheckOptions(layers, rules, severity),
             };
         }

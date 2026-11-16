@@ -5,13 +5,13 @@
 [![Release](https://github.com/ravindu-rev/sightline/actions/workflows/release.yml/badge.svg)](https://github.com/ravindu-rev/sightline/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A live, editable map of a .NET solution. It reads your code with Roslyn and shows, in one page:
+A live, editable map of a .NET solution, and of the TypeScript and JavaScript next to it. It reads C# with Roslyn and TypeScript and JavaScript with the TypeScript compiler, and shows, in one page:
 
-- projects, NuGet packages and how projects use each other
-- namespaces and types
-- dependency injection: which class is registered for which service, and with what lifetime
-- HTTP endpoints (controllers, minimal APIs, SignalR hubs, gRPC services)
-- the flow behind each endpoint: handler, services, repositories, database and outbound HTTP calls
+- projects, npm and NuGet packages, and how projects use each other
+- namespaces, folders and types
+- dependency injection: which class is registered for which service, and with what lifetime (also NestJS providers)
+- HTTP endpoints (controllers, minimal APIs, SignalR hubs, gRPC services; Express, Fastify, Koa, Hono, NestJS and Next.js routes)
+- the flow behind each endpoint: handler, services, repositories, database and outbound HTTP calls, which go on into the endpoint they reach when it is part of the code too
 - problems: a singleton that holds a scoped service, a service nobody registered, circular dependencies, broken layer rules
 
 The map redraws while you edit, and with your app running it also shows what the app really does: the services it registered, the endpoints it mapped, and every request it handles, down to the SQL it ran.
@@ -24,7 +24,7 @@ The map redraws while you edit, and with your app running it also shows what the
 
 Needs the .NET 10 SDK or newer. The package is `Co.Revington.Sightline`; the command is `sightline`.
 
-**Try it** without installing anything. In a folder with a `.sln`:
+**Try it** without installing anything. In a folder with a `.sln`, or a `package.json`:
 
 ```sh
 dnx Co.Revington.Sightline
@@ -57,7 +57,7 @@ Sightline: the live map of this solution is at http://localhost:5210 (or open /s
 
 With the app running, the map gets [what the app really does](#the-running-app): its real registrations and endpoints, every request it handles, and **Try it** on each endpoint. Only Debug builds of apps get the package's code; Release builds, test projects, CI runs and tools that load the app (such as `dotnet ef`) are left alone, and no assembly is added to the app. The map stays open across restarts (`dotnet watch`, a new debug session) and closes 10 seconds after the app stops. Turn it off with `<SightlineAutoStart>false</SightlineAutoStart>` in the project file, or `SIGHTLINE_AUTOSTART=0` for one run; `<SightlineOpenBrowser>true</SightlineOpenBrowser>` also opens the browser.
 
-**In VS Code**, the [Sightline extension](https://marketplace.visualstudio.com/items?itemName=revington.sightline) opens the map from the status bar, shows the method under the cursor on the map (**Show in Sightline**, `Ctrl+Alt+M`), and lists Sightline's problems in the Problems panel.
+**In VS Code**, the [Sightline extension](https://marketplace.visualstudio.com/items?itemName=revington.sightline) opens the map from the status bar, shows the method or function under the cursor on the map (**Show in Sightline**, `Ctrl+Alt+M`, in C#, TypeScript and JavaScript files), and lists Sightline's problems in the Problems panel.
 
 **For AI assistants**, `sightline mcp` serves the map over the [Model Context Protocol](https://modelcontextprotocol.io), so an assistant can ask how the code fits together instead of searching files. In VS Code, `.vscode/mcp.json`:
 
@@ -103,7 +103,7 @@ sightline diff [path] --base <ref>    # what a change does to the map, for pull 
 sightline mcp [path]                  # serve the map to AI assistants
 ```
 
-The path is a `.sln`, `.slnx` or `.csproj` file, or a folder. Without it, Sightline opens the solution named in the nearest `sightline.json`, or the nearest solution in the current folder or above it, up to the top of the repository. The map opens in the browser at `http://localhost:5210`.
+The path is a `.sln`, `.slnx`, `.csproj` or `package.json` file, or a folder. Without it, Sightline opens what the nearest `sightline.json` names, or the nearest solution in the current folder or above it, up to the top of the repository, or else the npm packages there. The map opens in the browser at `http://localhost:5210`.
 
 | Option | What it does |
 | --- | --- |
@@ -124,6 +124,19 @@ The path is a `.sln`, `.slnx` or `.csproj` file, or a folder. Without it, Sightl
 | `diff --fail-on error\|warning\|never` | Exit with 1 when the change adds problems of this level. |
 
 Exported maps and `diff` never contain paths from your machine: files are shown relative to the repository, and load warnings are left out.
+
+## Languages
+
+| Language | Read with | Projects | Endpoints | Dependency injection |
+| --- | --- | --- | --- | --- |
+| C# | Roslyn, the C# compiler, through MSBuild | `.sln`, `.slnx`, `.slnf`, `.csproj` | ASP.NET Core controllers and minimal APIs, SignalR hubs, gRPC services, health checks | `IServiceCollection` registrations |
+| TypeScript, JavaScript | The TypeScript compiler 6.0, which comes with Sightline and runs in Node.js | `package.json`, with npm, yarn and pnpm workspaces | Express and the routers like it (Polka, Restify), Fastify, Koa, Hono, NestJS controllers, Next.js route handlers | NestJS providers |
+
+**One map for a repository in several languages.** JavaScript and TypeScript packages anywhere under the folder of a solution join its map, next to the C# projects. Where code sends an HTTP request (`fetch`, axios, got, ky, `HttpClient`, ...) and the address fits exactly one endpoint on the map, the line goes to that endpoint, so a flow runs from a React component through `fetch('/api/orders')` into the ASP.NET Core handler and down to the database. An address whose start comes from settings (`` `${apiUrl}/api/orders` ``) is matched on the rest. Requests to other hosts, and those that fit no endpoint or several, stay "HTTP (outbound)". `samples/` shows this: the C# Shop, and an Express API, a NestJS API, a worker and a React client that call it.
+
+**JavaScript and TypeScript need Node.js** 18 or newer, on the PATH or named in the `SIGHTLINE_NODE` environment variable. Without it, the rest of the map loads, with a warning that says so. Nothing is installed and no code of yours runs: the compiler only reads it. Imports of the repository's own packages lead to their source, also in a fresh clone with nothing installed or built; with `node_modules` installed, calls into installed packages' types are followed too. Test files, stories, configuration files, build output and installed packages are left out.
+
+To read one language only, put `"languages": ["csharp"]` (or `["typescript"]`, which includes JavaScript) in `sightline.json`.
 
 ## Problems
 
@@ -147,11 +160,13 @@ Layer rules live in `sightline.json`:
 }
 ```
 
+In NestJS code the same checks read the providers of modules: a provider that no module provides (and an interface asked for by its type, which Nest cannot inject), providers that need each other, and providers nothing injects. Nest makes the classes that use a request-scoped provider request-scoped too, so that is never reported.
+
 Layers go from the top down; a project may use its own layer and the ones below. Reading code cannot see everything, so the map also lists what it **could not follow**: services registered by scanning assemblies (Scrutor, MediatR, FluentValidation), services looked up by a type worked out at run time, endpoints from frameworks it does not read yet (FastEndpoints, Carter, Razor Pages), and calls that did not resolve because packages are missing. With assembly scanning in the solution, a missing registration is only a note, since the scan may register it. With the app running, its real registrations count, and the uncertainty goes away.
 
 ## The running app
 
-With `Co.Revington.Sightline.Hosting` in the app, the app reports to the map once it has started:
+With `Co.Revington.Sightline.Hosting` in a .NET app, the app reports to the map once it has started:
 
 - **What it registered and mapped.** Endpoints the app confirms are marked; registrations and endpoints only the app knows about, such as those from assembly scanning or FastEndpoints, are added to the map and to the checks.
 - **Every request it handles**, under **Requests**: status, time, the database commands it ran (EF Core) and its outbound HTTP calls. Pick one to see it in full, and to light the path it took on the flow of its endpoint.
@@ -173,8 +188,9 @@ Everything stays on your machine. Requests from the page only ever go to apps on
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `solution` | the nearest solution | The `.sln`, `.slnx` or `.csproj` file to open, relative to `sightline.json`. |
-| `exclude` | none | Projects to leave off the map. Each entry is a project name, a folder or a path relative to `sightline.json`, and may use `*` within a folder name and `**` across folders: `"*.Tests"`, `"samples"`, `"tools/**"`. Left-out projects still load when others reference them, so the code that uses them is read correctly. |
+| `solution` | the nearest solution, or the folder of `sightline.json` | The `.sln`, `.slnx`, `.csproj` or `package.json` file, or the folder, to open, relative to `sightline.json`. |
+| `languages` | all of them | The languages to read: `csharp`, `typescript` (`javascript` is the same reader). See [Languages](#languages). |
+| `exclude` | none | Projects to leave off the map. Each entry is a project or package name, a folder or a path relative to `sightline.json`, and may use `*` within a folder name and `**` across folders: `"*.Tests"`, `"@acme/e2e"`, `"samples"`, `"tools/**"`. Left-out .NET projects still load when others reference them, so the code that uses them is read correctly. |
 | `port` | `5210` | Port for the map page. |
 | `openBrowser` | `true` | Open the map in the browser at start. |
 | `restore` | `true` | Run `dotnet restore` first for projects that were never restored. |
@@ -216,9 +232,10 @@ The strip at the bottom logs what each edit changed, for example `GetOrderHandle
 
 ## Limits
 
-- C# only. SDK-style projects.
-- Reading code follows constructor injection, interface implementations, overrides and MediatR-style `Send`/`Publish` to handlers. Reflection, assembly scanning and generated code are listed under "Not followed" instead; with the app running, its own report fills those gaps for registrations and endpoints.
-- Endpoint discovery covers controllers, minimal APIs (including `MapGroup` prefixes passed through extension methods), `MapHub`, `MapGrpcService` and `MapHealthChecks`. Other frameworks' endpoints come from the running app.
+- C# (SDK-style projects), TypeScript and JavaScript. Other languages are not read yet; [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-language) says how one is added.
+- Reading C# follows constructor injection, interface implementations, overrides and MediatR-style `Send`/`Publish` to handlers. Reflection, assembly scanning and generated code are listed under "Not followed" instead; with the app running, its own report fills those gaps for registrations and endpoints.
+- Endpoint discovery in C# covers controllers, minimal APIs (including `MapGroup` prefixes passed through extension methods), `MapHub`, `MapGrpcService` and `MapHealthChecks`. Other frameworks' endpoints come from the running app.
+- Reading JavaScript and TypeScript follows what the compiler resolves: imports and `require`, classes and the interfaces they name in `implements`, objects of functions, JSX components, NestJS constructor injection and NestJS CQRS handlers. Route prefixes are followed through `app.use('/api', router)`, `register(plugin, { prefix })`, `route('/x', app)` and routers passed to functions. A class that fits an interface without saying so, modules loaded by a computed name, and GraphQL, tRPC, WebSocket and message handlers are listed under "Not followed". Running Node apps do not report to the map.
 - Property reads and writes are not counted as calls.
 - Size: measured on jellyfin (41 projects, 2,300 types) and nopCommerce (40 projects, 4,150 types), a solution loads in 20 to 30 seconds and an edit reaches the open map in under a second. Very large flows stop at 160 steps and show "+N" where they stop.
 
@@ -230,10 +247,13 @@ The server listens on localhost only. Every API call needs a token that is gener
 
 ```sh
 dotnet run --project src/Co.Revington.Sightline -- samples/Shop/Shop.sln   # run from source on the bundled sample
-dotnet test                                                               # end-to-end tests
+dotnet run --project src/Co.Revington.Sightline -- samples                 # the C# sample and the TypeScript and JavaScript that call it
+dotnet test                                                               # end-to-end tests (needs Node.js 18 or newer)
 ```
 
-- `src/Co.Revington.Sightline/Analysis` loads the solution through MSBuild, extracts facts per file (declarations, calls, DI registrations, endpoints, constructor dependencies), builds the graph and runs the checks.
+- `src/Co.Revington.Sightline/Analysis` holds the facts every language reports per file (declarations, calls, DI registrations, endpoints, constructor dependencies), the C# reader that extracts them with Roslyn, the graph builder and the checks.
+- `src/Co.Revington.Sightline/Languages` is one workspace per language: `CSharpWorkspace` loads the solution through MSBuild; `TypeScript/` finds npm packages and their files, and talks to the reader in `analyzers/typescript`.
+- `src/Co.Revington.Sightline/analyzers/typescript` reads JavaScript and TypeScript with the TypeScript compiler (in `vendor/`, put there by `bash .github/scripts/vendor-typescript.sh 6.0.3`). Plain JavaScript modules for Node.js, no build step; Sightline starts it and talks to it in JSON lines.
 - `src/Co.Revington.Sightline/Live` watches the folder. A changed file is re-read alone, the graph is rebuilt, and only the difference is pushed to the browser.
 - `src/Co.Revington.Sightline/Server` is the local web server: the page, the API, "Try it", and what running apps report.
 - `src/Co.Revington.Sightline/Commands` and `Mcp` are `check`, `export`, `diff` and `mcp`.
