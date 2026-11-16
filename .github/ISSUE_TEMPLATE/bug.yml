@@ -13,8 +13,7 @@ body:
     id: code
     attributes:
       label: Code that shows it
-      description: The smallest piece of code, or a link to a public repository, that shows the problem.
-      render: csharp
+      description: The smallest piece of code, or a link to a public repository, that shows the problem. Start code with a line ```cs (or ```ts, ```js) and end it with a line ```.
   - type: input
     id: version
     attributes:
@@ -26,8 +25,8 @@ body:
   - type: input
     id: environment
     attributes:
-      label: Operating system and .NET SDK
-      placeholder: "Windows 11, .NET SDK 10.0.100"
+      label: Operating system, .NET SDK and Node.js
+      placeholder: "Windows 11, .NET SDK 10.0.100, Node.js 24.11.0"
   - type: textarea
     id: log
     attributes:

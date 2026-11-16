@@ -406,7 +406,7 @@ internal static class Checks
             var r = regs[0];
             c.Add("unused-registration", severity, "A registration nothing asks for",
                 $"{node.Name} is registered{(r.Owner is not null ? " in " + c.Label(r.Owner) : "")}, but no class, endpoint or lookup " +
-                "in the solution asks for it. A package or reflection may still use it; otherwise the registration can go.",
+                "in the code asks for it. A package or reflection may still use it; otherwise the registration can go.",
                 r.File, r.Line, service);
         }
     }

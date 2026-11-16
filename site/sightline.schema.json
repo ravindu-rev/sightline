@@ -16,11 +16,11 @@
     },
     "exclude": {
       "type": "array",
-      "description": "Projects to leave off the map. Each entry is a project name, a folder or a path relative to this file, and may use * (within a folder name) and ** (across folders). Left-out projects still load when others reference them, so code that uses them is read correctly.",
+      "description": "Projects to leave off the map. Each entry is a project or package name, a folder or a path relative to this file, and may use * (within a folder name) and ** (across folders). Left-out C# projects still load when others reference them, so code that uses them is read correctly.",
       "items": {
         "type": "string",
         "minLength": 1,
-        "examples": ["*.Tests", "samples", "tools/**"]
+        "examples": ["*.Tests", "@acme/e2e", "samples", "tools/**"]
       },
       "uniqueItems": true,
       "default": []
@@ -40,11 +40,11 @@
     "restore": {
       "type": "boolean",
       "default": true,
-      "description": "Run \"dotnet restore\" first for projects that were never restored, as \"dotnet build\" does."
+      "description": "Run \"dotnet restore\" first for C# projects that were never restored, as \"dotnet build\" does. npm packages are never installed."
     },
     "layers": {
       "type": "array",
-      "description": "The layers of the solution, from the top down. Each item is a project name pattern, or a list of patterns for projects that share a layer. A project may use its own layer and the layers below it; using a higher layer is reported as a problem.",
+      "description": "The layers of the code, from the top down. Each item is a project name pattern, or a list of patterns for projects that share a layer. A project may use its own layer and the layers below it; using a higher layer is reported as a problem.",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
@@ -55,7 +55,7 @@
     },
     "rules": {
       "type": "array",
-      "description": "Projects that may not use certain projects or NuGet packages. Breaking a rule is reported as a problem.",
+      "description": "Projects that may not use certain projects or packages (NuGet or npm). Breaking a rule is reported as a problem.",
       "items": {
         "type": "object",
         "properties": {
@@ -64,7 +64,7 @@
             "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
           },
           "mayNotUse": {
-            "description": "Project or package name patterns that the projects in \"from\" may not use, such as \"Microsoft.EntityFrameworkCore*\".",
+            "description": "Project or package name patterns that the projects in \"from\" may not use, such as \"Microsoft.EntityFrameworkCore*\" or \"@prisma/*\".",
             "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
           },
           "because": {

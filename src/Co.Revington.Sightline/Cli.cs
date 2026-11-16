@@ -47,7 +47,7 @@ internal static class Cli
 
         Usage:
           sightline [path] [options]          Open the map
-          sightline init [folder]             Set a solution up for everyone who works on it
+          sightline init [folder]             Set a repository up for everyone who works on it
           sightline check [path]              List problems; exit code 1 when there are errors
           sightline export [path] --out <dir> Write the map as a static website anyone can open
           sightline diff [path] --base <ref>  What a change does to the map, for pull requests
@@ -61,7 +61,7 @@ internal static class Cli
         Options:
           --port <n>          Port for the map page (default 5210, or the next free one)
           --no-open           Do not open the browser
-          --no-restore        Do not run "dotnet restore" for projects that were never restored
+          --no-restore        Do not run "dotnet restore" for C# projects that were never restored
           --version           Show the version
           -h, --help          Show this help
 

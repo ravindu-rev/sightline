@@ -20,7 +20,7 @@ internal static class Exporter
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("Sightline could not load the solution: " + ex.Message);
+            Console.Error.WriteLine("Sightline could not load the code: " + ex.Message);
             return 2;
         }
 

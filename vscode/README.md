@@ -1,16 +1,16 @@
 # Sightline for VS Code
 
-A live, editable map of your .NET solution, one click from your code: projects, dependency injection, HTTP endpoints, and the path each request takes down to the database. It updates while you type.
+A live, editable map of your C#, TypeScript and JavaScript, one click from your code: projects, dependency injection, HTTP endpoints, and the path each request takes down to the database, also from one language into another. It updates while you type.
 
-- **Sightline: Open the map** (or the Sightline button in the status bar) opens the map of the solution in your browser, or in a VS Code tab.
-- **Show in Sightline** (right-click in a C# file, or `Ctrl+Alt+M` / `Cmd+Alt+M`) shows the method, endpoint or class under the cursor on the map: an endpoint or method as the flow of what it calls, a class with everything around it.
+- **Sightline: Open the map** (or the Sightline button in the status bar) opens the map of the folder in your browser, or in a VS Code tab.
+- **Show in Sightline** (right-click in a C#, TypeScript or JavaScript file, or `Ctrl+Alt+M` / `Cmd+Alt+M`) shows the method, function, endpoint or class under the cursor on the map: an endpoint or method as the flow of what it calls, a class with everything around it.
 - **Problems panel**: while a map is open, Sightline's findings show there too: a singleton that holds a scoped service, a service that is asked for but never registered, circular dependencies, and the layer rules of your `sightline.json`.
 
 The extension uses a map that is already open for the folder, whether you started it with `dotnet sightline` or it runs beside your app through the `Co.Revington.Sightline.Hosting` package. Otherwise it starts one: the repository's own tool when `sightline init` set it up, or `dnx Co.Revington.Sightline`.
 
 ## Needs
 
-The .NET 10 SDK, and a folder you trust: reading a solution runs MSBuild and restores packages, which runs code from the repository, so the extension stays off in Restricted Mode.
+The .NET 10 SDK, since Sightline runs as a .NET tool whatever language your code is in, and Node.js 18 or newer to read TypeScript and JavaScript. And a folder you trust: reading C# runs MSBuild and restores packages, which runs code from the repository, so the extension stays off in Restricted Mode.
 
 ## Settings
 

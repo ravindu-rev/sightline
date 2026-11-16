@@ -1,6 +1,6 @@
 # Sightline for a project
 
-Add this package to the app you run. Every time you run it from a Debug build, Sightline, a live and editable map of your .NET solution, starts beside it:
+Add this package to the .NET app you run. Every time you run it from a Debug build, Sightline, a live and editable map of your code, starts beside it:
 
 ```text
 Sightline: the live map of this solution is at http://localhost:5210 (or open /sightline on this app)
@@ -10,7 +10,7 @@ Sightline: the live map of this solution is at http://localhost:5210 (or open /s
 dotnet add package Co.Revington.Sightline.Hosting
 ```
 
-The map shows projects, dependency injection, HTTP endpoints and the path each request takes down to the database, and it updates while you edit.
+The map shows projects, dependency injection, HTTP endpoints and the path each request takes down to the database, and it updates while you edit. TypeScript and JavaScript in the solution's folder are on it too, with their HTTP calls into your endpoints.
 
 ## How it behaves
 
@@ -34,6 +34,6 @@ For a single run, set the environment variable `SIGHTLINE_AUTOSTART=0`.
 
 ## Needs
 
-The .NET 10 runtime on the machine. The app itself can target .NET 5 or newer.
+The .NET 10 runtime on the machine. The app itself can target .NET 5 or newer. Reading TypeScript and JavaScript also needs Node.js 18 or newer.
 
 The same tool without a package reference: `dnx Co.Revington.Sightline`. More at https://github.com/ravindu-rev/sightline

@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.ravindu-rev/sightline",
-  "description": "A live map of a .NET solution for AI assistants: endpoints, request flows, dependency injection, problems, and what a change affects.",
+  "description": "A live map of C#, TypeScript and JavaScript code: endpoints, request flows, DI, problems, impact.",
   "version": "{version}",
   "packages": [
     {

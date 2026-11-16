@@ -13,4 +13,4 @@ body:
     id: example
     attributes:
       label: An example
-      description: A solution, a framework or a piece of code where it matters.
+      description: A repository, a framework or a piece of code where it matters.

@@ -37,8 +37,8 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
 
     public static JsonArray Definitions() =>
     [
-        Tool("solution_overview", "Solution overview",
-            "Projects with their kind, target framework and references; counts of types, endpoints and services; problems found; " +
+        Tool("solution_overview", "Overview of the code",
+            "Projects with their kind, target framework or language, and references; counts of types, endpoints and services; problems found; " +
             "and what the analysis could not follow. Call this first.", Schema()),
         Tool("find_symbol", "Find a class, method or endpoint",
             "Finds types, methods, properties, HTTP endpoints, projects and packages by name. Returns ids and file:line.",
@@ -117,7 +117,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
         var g = q.Graph;
         var sb = new StringBuilder();
         int Count(string kind) => g.Nodes.Values.Count(n => n.Kind == kind);
-        sb.AppendLine($"Solution {session.Name} (folder {paths.Root})");
+        sb.AppendLine($"Map of {session.Name} (folder {paths.Root})");
         sb.AppendLine($"{Count("project")} projects, {Count("type")} types, {Count("member")} members, {Count("endpoint")} endpoints, " +
                       $"{g.Services.Count} service registrations, {Count("package")} packages.");
         sb.AppendLine();
@@ -229,7 +229,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
 
         if (up) Up(root.Id, 0, "");
         else Down(root.Id, 0, "");
-        if (sb.ToString().Split('\n').Length <= 2) sb.AppendLine(up ? "Nothing in the solution calls it." : "It calls nothing that the analysis can follow.");
+        if (sb.ToString().Split('\n').Length <= 2) sb.AppendLine(up ? "Nothing in the code calls it." : "It calls nothing that the analysis can follow.");
         return sb.ToString().TrimEnd();
     }
 
@@ -356,7 +356,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
                 if (q.Graph.Nodes.TryGetValue(id, out var n)) sb.AppendLine($"- {q.Label(id)} ({string.Join(", ", kinds)})  {Where(n)}");
             frontier = next;
         }
-        if (!anyone) sb.AppendLine("Nothing in the solution uses it.");
+        if (!anyone) sb.AppendLine("Nothing in the code uses it.");
         return sb.ToString().TrimEnd();
     }
 }

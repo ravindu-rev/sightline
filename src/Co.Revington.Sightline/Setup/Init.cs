@@ -261,7 +261,7 @@ internal static class Init
         var task = new JsonObject
         {
             ["label"] = TaskLabel,
-            ["detail"] = "Open the live map of this solution",
+            ["detail"] = "Open the live map of this code",
             ["type"] = "process",
             ["command"] = "dotnet",
             ["args"] = new JsonArray("sightline"),

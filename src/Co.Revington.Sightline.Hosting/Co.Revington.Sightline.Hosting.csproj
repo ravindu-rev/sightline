@@ -21,7 +21,7 @@
 
     <PackageId>Co.Revington.Sightline.Hosting</PackageId>
     <Title>Sightline for a project</Title>
-    <Description>Add it to the app you run, and Sightline, a live and editable map of your .NET solution, starts beside it whenever you run a Debug build. Web apps also answer /sightline with the map. Nothing is added to Release builds.</Description>
+    <Description>Add it to the .NET app you run, and Sightline, a live and editable map of your code (C#, and the TypeScript and JavaScript next to it), starts beside it whenever you run a Debug build. Web apps also answer /sightline with the map. Nothing is added to Release builds.</Description>
     <PackageTags>sightline;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;developer-tools</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

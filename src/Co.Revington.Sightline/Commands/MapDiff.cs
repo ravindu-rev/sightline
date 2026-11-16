@@ -83,7 +83,7 @@ internal static class MapDiff
         var start = Directory.Exists(head.Path) ? head.Path : Path.GetDirectoryName(head.Path)!;
         var repo = OneShot.RepoRoot(start);
         if (!Directory.Exists(Path.Combine(repo, ".git")) && !File.Exists(Path.Combine(repo, ".git")))
-            throw new InvalidOperationException("--base needs the solution to be in a git repository.");
+            throw new InvalidOperationException("--base needs the code to be in a git repository.");
 
         var temp = Path.Combine(Path.GetTempPath(), "sightline-base-" + Guid.NewGuid().ToString("N")[..8]);
         var added = await Git(repo, "worktree", "add", "--detach", temp, reference);
@@ -326,7 +326,7 @@ internal static class MapDiff
         }
 
         sb.AppendLine();
-        sb.AppendLine($"<sub>Made with [Sightline](https://sightline.revington.co) {ToolInfo.Version}, a live map of .NET solutions.</sub>");
+        sb.AppendLine($"<sub>Made with [Sightline](https://sightline.revington.co) {ToolInfo.Version}, a live map of your code.</sub>");
         return sb.ToString();
 
         void Section(string title, List<Change> changes)

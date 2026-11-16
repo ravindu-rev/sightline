@@ -161,10 +161,10 @@ internal sealed class McpServer
         for (var waited = 0; waited < 600; waited++)
         {
             if (_session.Snapshot.Graph is { } graph && _session.Status.State != "loading") return graph;
-            if (_session.Status.State == "error") throw new ToolException("Sightline could not load the solution: " + _session.Status.Message);
+            if (_session.Status.State == "error") throw new ToolException("Sightline could not load the code: " + _session.Status.Message);
             await Task.Delay(250);
         }
-        throw new ToolException($"Sightline is still loading the solution ({_session.Status.Message}). Try again in a moment.");
+        throw new ToolException($"Sightline is still reading the code ({_session.Status.Message}). Try again in a moment.");
     }
 
     static JsonObject Error(JsonNode? id, int code, string message) => new()

@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sightline, a live map of your .NET solution</title>
-  <meta name="description" content="A live map of your .NET solution: projects, dependency injection, ASP.NET Core endpoints and request flows, updated as you edit. Free and open source.">
+  <title>Sightline, a live map of your C#, TypeScript and JavaScript code</title>
+  <meta name="description" content="A live map of your C#, TypeScript and JavaScript code: projects, dependency injection, endpoints and request flows, also from one language into another, updated as you edit. Free and open source.">
   <meta name="robots" content="max-image-preview:large">
   <link rel="canonical" href="https://sightline.revington.co/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Sightline">
-  <meta property="og:title" content="Sightline, a live map of your .NET solution">
-  <meta property="og:description" content="See projects, dependency injection, endpoints and request flows in one page that updates while you edit. Try the live demo in your browser.">
+  <meta property="og:title" content="Sightline, a live map of your code">
+  <meta property="og:description" content="C#, TypeScript and JavaScript: projects, dependency injection, endpoints and request flows in one page that updates while you edit. Try the live demo in your browser.">
   <meta property="og:url" content="https://sightline.revington.co/">
   <meta property="og:image" content="https://sightline.revington.co/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Sightline showing the flow of a request through a .NET solution">
+  <meta property="og:image:alt" content="Sightline showing the flow of a request from an endpoint down to the database">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" type="image/png" href="icon.png">
@@ -31,26 +31,28 @@
         "@id": "https://sightline.revington.co/#app",
         "name": "Sightline",
         "alternateName": "Co.Revington.Sightline",
-        "description": "Sightline reads a .NET solution and draws how it fits together: projects, dependency injection, endpoints and the path of every request. The map updates while you edit.",
+        "description": "Sightline reads C#, TypeScript and JavaScript and draws how the code fits together: projects, dependency injection, endpoints and the path of every request, also from one language into another. The map updates while you edit.",
         "url": "https://sightline.revington.co/",
         "image": "https://sightline.revington.co/og.png",
         "screenshot": "https://sightline.revington.co/og.png",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Windows, macOS, Linux",
-        "softwareRequirements": ".NET 10 SDK or newer",
+        "softwareRequirements": ".NET 10 SDK or newer; Node.js 18 or newer for TypeScript and JavaScript",
         "softwareVersion": "{{version}}",
         "downloadUrl": "https://www.nuget.org/packages/Co.Revington.Sightline",
         "license": "https://github.com/ravindu-rev/sightline/blob/master/LICENSE",
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "featureList": [
-          "Map of projects, NuGet packages, namespaces and types",
-          "Dependency injection registrations and their lifetimes",
-          "HTTP endpoints: controllers, minimal APIs, SignalR hubs and gRPC services",
+          "Reads C# with Roslyn, and TypeScript and JavaScript with the TypeScript compiler",
+          "Map of projects, NuGet and npm packages, namespaces, folders and types",
+          "Dependency injection registrations and their lifetimes, and NestJS providers",
+          "HTTP endpoints: ASP.NET Core controllers, minimal APIs, SignalR hubs and gRPC services; Express, Fastify, Koa, Hono, NestJS and Next.js routes",
           "The path of each request through handlers, services and repositories to the database and outbound HTTP calls",
+          "HTTP calls linked to the endpoints they reach, also in another language",
           "Updates while you edit, before the file is saved",
           "Checks for captive dependencies, missing registrations, dependency cycles and layer rules",
-          "Requests, SQL and HTTP calls from the running app",
+          "Requests, SQL and HTTP calls from the running .NET app",
           "VS Code extension, MCP server for AI assistants, GitHub Action for pull requests, and maps exported as static websites"
         ],
         "author": { "@id": "https://sightline.revington.co/#publisher" },
@@ -99,15 +101,15 @@
     <section class="hero">
       <div class="wrap hero-grid">
         <div>
-          <h1>A live map of your .NET&nbsp;solution</h1>
-          <p class="lead">Sightline reads your code and draws how it fits together: projects, dependency injection, endpoints, and the path each request takes down to the database. Change the code and the map changes with it.</p>
+          <h1>A live map of your&nbsp;code</h1>
+          <p class="lead">Sightline reads your C#, TypeScript and JavaScript and draws how it fits together: projects, dependency injection, endpoints, and the path each request takes down to the database, also from one language into another. Change the code and the map changes with it.</p>
         </div>
         <div class="get">
           <div class="command">
             <code id="install-command">dnx Co.Revington.Sightline</code>
             <button type="button" class="copy" data-copy="install-command">Copy</button>
           </div>
-          <p class="fine">Run it in a folder with a <code>.sln</code> and the map opens. Nothing gets installed. Needs the .NET 10 SDK. Version {{version}} on <a href="https://www.nuget.org/packages/Co.Revington.Sightline">NuGet</a>, free and open source under the MIT license.</p>
+          <p class="fine">Run it in a folder with a <code>.sln</code> or a <code>package.json</code> and the map opens. Nothing gets installed. Needs the .NET 10 SDK, and Node.js for TypeScript and JavaScript. Version {{version}} on <a href="https://www.nuget.org/packages/Co.Revington.Sightline">NuGet</a>, free and open source under the MIT license.</p>
         </div>
       </div>
     </section>
@@ -116,19 +118,19 @@
       <div class="wrap demo-head">
         <div>
           <h2 id="demo-title">Try it here, nothing to install</h2>
-          <p>This is the real interface, running in your browser on a recording of the sample shop solution from the repository.</p>
+          <p>This is the real interface, running in your browser on a recording of the C# sample shop from the repository.</p>
         </div>
         <div class="asks" role="group" aria-label="Things to try in the demo">
           <button type="button" class="ask a0" data-ask='{"action":"flow","verb":"POST","route":"/api/orders"}' disabled>Trace POST /api/orders</button>
           <button type="button" class="ask a1" data-ask='{"action":"focus","type":"OrderRepository"}' disabled>What uses OrderRepository?</button>
-          <button type="button" class="ask a2" data-ask='{"action":"map"}' disabled>Show the whole solution</button>
+          <button type="button" class="ask a2" data-ask='{"action":"map"}' disabled>Show the whole map</button>
           <button type="button" class="ask a3" data-ask='{"action":"edit"}' disabled>Replay a code edit</button>
         </div>
       </div>
 
       <div class="wide">
         <div class="frame" id="frame">
-          <iframe title="Sightline running on the sample shop solution" data-src="demo/"></iframe>
+          <iframe title="Sightline running on the sample shop" data-src="demo/"></iframe>
           <button type="button" class="guard" aria-label="Start using the demo: after this, clicks and scrolling go to the demo">
             <span>Click to explore</span>
           </button>
@@ -147,12 +149,12 @@
         <h2 id="views-title">Three questions it answers</h2>
         <div class="lines">
           <article class="line l0">
-            <h3>What is in this solution?</h3>
-            <p><strong>Map.</strong> Every project is a zone. Lines between zones show which project uses which, and how often. Open a zone to see its namespaces and types.</p>
+            <h3>What is in this repository?</h3>
+            <p><strong>Map.</strong> Every project is a zone, whatever its language. Lines between zones show which project uses which, and how often, also over HTTP. Open a zone to see its namespaces or folders and their types.</p>
           </article>
           <article class="line l1">
             <h3>What happens when this endpoint is hit?</h3>
-            <p><strong>Flow.</strong> Pick an endpoint and read the request as numbered steps: handler, services, repositories, then the database or an outbound HTTP call. A call on an interface continues in the class registered for it.</p>
+            <p><strong>Flow.</strong> Pick an endpoint and read the request as numbered steps: handler, services, repositories, then the database or an outbound HTTP call. A call on an interface continues in the class registered for it, and an HTTP call in the endpoint it reaches, even in another language.</p>
           </article>
           <article class="line l2">
             <h3>What breaks if I change this class?</h3>
@@ -166,7 +168,7 @@
       <div class="wrap two">
         <div>
           <h2 id="problems-title">It catches what only fails at run time</h2>
-          <p>Some mistakes compile fine and only show up when a request comes in, or only in production. Sightline checks for them as you type, and marks where they are on the map.</p>
+          <p>Some mistakes compile fine and only show up when a request comes in, or only in production. Sightline checks for them as you type, in .NET dependency injection and in NestJS providers, and marks where they are on the map.</p>
           <p>Layer rules live in <code>sightline.json</code>: list your layers from the top down, or say that the domain may not use Entity Framework, and a project that breaks the rule is reported.</p>
           <p class="fine">The same checks run in CI with <code>sightline check</code>, appear in VS Code's Problems panel, and are listed on every pull request.</p>
         </div>
@@ -182,8 +184,8 @@
 
     <section id="app" class="app" aria-labelledby="app-title">
       <div class="wrap">
-        <h2 id="app-title">And what your app really does</h2>
-        <p class="intro">Add <code>Co.Revington.Sightline.Hosting</code> to the app you run. Every Debug run opens the map beside it, and the running app tells the map what reading the code cannot see.</p>
+        <h2 id="app-title">And what your .NET app really does</h2>
+        <p class="intro">Add <code>Co.Revington.Sightline.Hosting</code> to the .NET app you run. Every Debug run opens the map beside it, and the running app tells the map what reading the code cannot see.</p>
         <div class="lines">
           <article class="line l0">
             <h3>Every request, with its SQL</h3>
@@ -212,7 +214,7 @@
         <div class="grid4">
           <article>
             <h3>VS Code</h3>
-            <p>The <a href="https://marketplace.visualstudio.com/items?itemName=revington.sightline">Sightline extension</a> shows the method under your cursor on the map, and puts Sightline's problems in the Problems panel.</p>
+            <p>The <a href="https://marketplace.visualstudio.com/items?itemName=revington.sightline">Sightline extension</a> shows the method or function under your cursor on the map, and puts Sightline's problems in the Problems panel.</p>
           </article>
           <article>
             <h3>AI assistants</h3>
@@ -224,7 +226,7 @@
           </article>
           <article>
             <h3>Docs and onboarding</h3>
-            <p><code>sightline export</code> writes the map as a website you can host anywhere. Tours walk a new teammate through the solution, one view at a time.</p>
+            <p><code>sightline export</code> writes the map as a website you can host anywhere. Tours walk a new teammate through the code, one view at a time.</p>
           </article>
         </div>
       </div>
@@ -260,12 +262,12 @@
             <div class="key k-data">
               <span class="sample"><svg viewBox="0 0 64 12" width="64" height="12" aria-hidden="true"><path class="ln" d="M2 6H52"/><path class="head" d="M50 2l10 4-10 4z"/></svg></span>
               <dt>Database access</dt>
-              <dd>Entity Framework Core sets that are read or written, and where changes are saved.</dd>
+              <dd>Entity Framework Core sets that are read or written, and where changes are saved. In JavaScript and TypeScript: Prisma, TypeORM, Mongoose, Sequelize, Knex, Drizzle and SQL clients.</dd>
             </div>
             <div class="key k-net">
               <span class="sample"><svg viewBox="0 0 64 12" width="64" height="12" aria-hidden="true"><path class="ln" d="M2 6H52"/><path class="head" d="M50 2l10 4-10 4z"/></svg></span>
               <dt>Outbound HTTP call</dt>
-              <dd>Requests your code makes with <code>HttpClient</code>.</dd>
+              <dd>Requests your code makes with <code>HttpClient</code>, <code>fetch</code>, axios and the like. When the address fits an endpoint on the map, the line goes on to that endpoint.</dd>
             </div>
             <div class="key k-project">
               <span class="sample"><svg viewBox="0 0 64 12" width="64" height="12" aria-hidden="true"><path class="ln" d="M2 6H52"/><path class="head" d="M50 2l10 4-10 4z"/></svg></span>
@@ -278,17 +280,17 @@
             <div class="key">
               <span class="sample"><span class="verb v-get">GET</span></span>
               <dt>Endpoints</dt>
-              <dd>Controller actions, minimal APIs with the route prefixes of their groups, SignalR hubs and gRPC services.</dd>
+              <dd>Controller actions, minimal APIs with the route prefixes of their groups, SignalR hubs and gRPC services. Express, Fastify, Koa, Hono, NestJS and Next.js routes, with the prefixes they are mounted under.</dd>
             </div>
             <div class="key">
               <span class="sample"><span class="badge b-class">C</span><span class="badge b-iface">I</span><span class="badge b-record">R</span></span>
               <dt>Types</dt>
-              <dd>Classes, interfaces, records, structs and enums, listed per namespace inside their project.</dd>
+              <dd>Classes, interfaces, records, structs and enums, and modules for the top-level functions of JavaScript and TypeScript files, listed per namespace or folder inside their project.</dd>
             </div>
             <div class="key">
               <span class="sample"><span class="chip life">scoped</span></span>
               <dt>Service lifetimes</dt>
-              <dd>Scoped, singleton and transient registrations, hosted services, typed HTTP clients and options classes.</dd>
+              <dd>Scoped, singleton and transient registrations, hosted services, typed HTTP clients and options classes. NestJS providers and their scopes.</dd>
             </div>
             <div class="key">
               <span class="sample"><span class="chip">handler</span></span>
@@ -298,7 +300,7 @@
             <div class="key">
               <span class="sample"><span class="chip dashed">10.0.15</span></span>
               <dt>Packages</dt>
-              <dd>The NuGet packages each project references, with the versions that were actually restored.</dd>
+              <dd>The NuGet and npm packages each project uses, with the versions that were actually restored or locked.</dd>
             </div>
           </dl>
         </div>
@@ -326,12 +328,12 @@
         <p class="intro">Do it once in your repository. Everyone who clones it then gets the same version and the same settings, with nothing to install by hand.</p>
         <ol class="route">
           <li>
-            <h3>Set up the solution</h3>
+            <h3>Set up the repository</h3>
             <div class="command small">
               <code id="step-init">dnx Co.Revington.Sightline init</code>
               <button type="button" class="copy" data-copy="step-init">Copy</button>
             </div>
-            <p>Run it in the folder with your <code>.sln</code>. It pins Sightline in <code>dotnet-tools.json</code>, writes <code>sightline.json</code>, and adds a VS Code task when the folder uses VS Code.</p>
+            <p>Run it in the folder with your code, usually the root of the repository. It pins Sightline in <code>dotnet-tools.json</code>, writes <code>sightline.json</code>, and adds a VS Code task when the folder uses VS Code.</p>
           </li>
           <li>
             <h3>Open the map</h3>
@@ -339,7 +341,7 @@
               <code id="step-run">dotnet sightline</code>
               <button type="button" class="copy" data-copy="step-run">Copy</button>
             </div>
-            <p>Works from any folder in the repository. Packages are restored first when needed. Press <kbd>/</kbd> in the map to find a class, method or endpoint.</p>
+            <p>Works from any folder in the repository. NuGet packages are restored first when needed. Press <kbd>/</kbd> in the map to find a class, method or endpoint.</p>
           </li>
           <li>
             <h3>Share it</h3>
@@ -350,9 +352,9 @@
         <div class="two settings">
           <div>
             <h3>Settings live in the repository</h3>
-            <p><code>sightline.json</code> names the solution to open and the projects to leave off the map, such as tests or samples that would crowd it. Editors that read JSON schemas suggest the settings as you type.</p>
-            <p>Rather have it inside your app? Add <code>Co.Revington.Sightline.Hosting</code> to the project you run. Every Debug run then opens the map beside the app, and web apps answer <code>/sightline</code> with it. Release builds get nothing.</p>
-            <p>Just for yourself? <code>dotnet tool install --global Co.Revington.Sightline</code>, then run <code>sightline</code> in any solution folder.</p>
+            <p><code>sightline.json</code> names what to open, the languages to read and the projects to leave off the map, such as tests or samples that would crowd it. Editors that read JSON schemas suggest the settings as you type.</p>
+            <p>Rather have it inside your .NET app? Add <code>Co.Revington.Sightline.Hosting</code> to the project you run. Every Debug run then opens the map beside the app, and web apps answer <code>/sightline</code> with it. Release builds get nothing.</p>
+            <p>Just for yourself? <code>dotnet tool install --global Co.Revington.Sightline</code>, then run <code>sightline</code> in any repository.</p>
           </div>
           <pre class="file" aria-label="Example sightline.json"><span class="file-name">sightline.json</span><code>{
   "$schema": "https://sightline.revington.co/sightline.schema.json",
@@ -368,15 +370,16 @@
         <div>
           <h2>What it does not do yet</h2>
           <ul>
-            <li>It reads C# in SDK-style projects only.</li>
+            <li>It reads C# (SDK-style projects), TypeScript and JavaScript. Other languages are not read yet.</li>
             <li>Reading code cannot follow reflection, assembly scanning or generated code. The map lists where these happen, and with your app running, the app's own report fills the gaps for registrations and endpoints.</li>
             <li>FastEndpoints, Carter and Razor Pages endpoints come from the running app, not from reading the code.</li>
+            <li>In JavaScript and TypeScript, GraphQL, tRPC, WebSocket and message handlers are not followed yet, and running Node.js apps do not report to the map.</li>
             <li>Property reads and writes are not counted as calls.</li>
           </ul>
         </div>
         <div>
           <h2>Your code stays on your machine</h2>
-          <p>Sightline runs locally and sends nothing anywhere. Its page is served on localhost only, every request needs a token created at start, only files that belong to the loaded solution can be read or saved, and "Try it" only calls apps on your machine.</p>
+          <p>Sightline runs locally and sends nothing anywhere. Its page is served on localhost only, every request needs a token created at start, only files of the projects on the map can be read or saved, and "Try it" only calls apps on your machine.</p>
           <p><a href="https://github.com/ravindu-rev/sightline">Read the source on GitHub</a></p>
         </div>
       </div>

@@ -6,15 +6,14 @@ body:
     id: framework
     attributes:
       label: Framework or pattern
-      placeholder: "MassTransit consumers, Wolverine handlers, Carter modules, ..."
+      placeholder: "MassTransit consumers, Carter modules, tRPC routers, GraphQL resolvers, ..."
     validations:
       required: true
   - type: textarea
     id: code
     attributes:
       label: How it looks in code
-      description: A short example of the registration, endpoint or call the map should follow.
-      render: csharp
+      description: A short example of the registration, endpoint or call the map should follow. Start code with a line ```cs (or ```ts, ```js) and end it with a line ```.
     validations:
       required: true
   - type: textarea

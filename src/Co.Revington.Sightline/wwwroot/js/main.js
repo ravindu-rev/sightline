@@ -274,7 +274,7 @@ function readLink() {
 
   const id = p.get('id');
   const sel = p.get('sel');
-  if (id && !store.node(id)) toast('The link points at something that is not in this solution any more.');
+  if (id && !store.node(id)) toast('The link points at something that is not on this map any more.');
 
   applyingLink = true;
   state.view = name;
@@ -438,7 +438,7 @@ function renderProblemsButton() {
   button.append(problems.length ? plural(problems.length, 'problem') : 'No problems');
 }
 
-/** A new GitHub issue with the version and the size of the solution filled in; no names or paths. */
+/** A new GitHub issue with the version and the size of the map filled in; no names or paths. */
 function feedbackLink() {
   const c = store.info.counts ?? {};
   const body = [
@@ -616,7 +616,7 @@ function pushFeed(change) {
   if (!parts.length) return;
   feed.unshift({
     time: new Date().toLocaleTimeString([], { hour12: false }),
-    files: (change.files ?? []).map(fileName).join(', ') || 'whole solution',
+    files: (change.files ?? []).map(fileName).join(', ') || 'all files',
     parts: parts.slice(0, 4),
     ms: change.ms,
     go: change.added[0]?.id ?? change.changed[0]?.id ?? plus[0]?.source ?? minus[0]?.source,

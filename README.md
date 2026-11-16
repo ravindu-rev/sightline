@@ -5,7 +5,7 @@
 [![Release](https://github.com/ravindu-rev/sightline/actions/workflows/release.yml/badge.svg)](https://github.com/ravindu-rev/sightline/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A live, editable map of a .NET solution, and of the TypeScript and JavaScript next to it. It reads C# with Roslyn and TypeScript and JavaScript with the TypeScript compiler, and shows, in one page:
+A live, editable map of your code: C#, TypeScript and JavaScript, alone or side by side in one repository. It reads each language with its own compiler (Roslyn for C#, the TypeScript compiler for TypeScript and JavaScript) and shows, in one page:
 
 - projects, npm and NuGet packages, and how projects use each other
 - namespaces, folders and types
@@ -14,7 +14,7 @@ A live, editable map of a .NET solution, and of the TypeScript and JavaScript ne
 - the flow behind each endpoint: handler, services, repositories, database and outbound HTTP calls, which go on into the endpoint they reach when it is part of the code too
 - problems: a singleton that holds a scoped service, a service nobody registered, circular dependencies, broken layer rules
 
-The map redraws while you edit, and with your app running it also shows what the app really does: the services it registered, the endpoints it mapped, and every request it handles, down to the SQL it ran.
+The map redraws while you edit, and with your .NET app running it also shows what the app really does: the services it registered, the endpoints it mapped, and every request it handles, down to the SQL it ran.
 
 ![Sightline: an edit in the code panel adds a step to the flow of an endpoint](https://raw.githubusercontent.com/ravindu-rev/sightline/master/assets/sightline.gif)
 
@@ -22,7 +22,7 @@ The map redraws while you edit, and with your app running it also shows what the
 
 ## Get started
 
-Needs the .NET 10 SDK or newer. The package is `Co.Revington.Sightline`; the command is `sightline`.
+Sightline is installed with .NET, whatever language your code is in: it needs the .NET 10 SDK or newer, and Node.js 18 or newer to read TypeScript and JavaScript. The package is `Co.Revington.Sightline`; the command is `sightline`.
 
 **Try it** without installing anything. In a folder with a `.sln`, or a `package.json`:
 
@@ -30,22 +30,22 @@ Needs the .NET 10 SDK or newer. The package is `Co.Revington.Sightline`; the com
 dnx Co.Revington.Sightline
 ```
 
-**Set it up for your solution**, so the whole team has it. In the folder with your `.sln`, usually the root of the repository:
+**Set it up for your repository**, so the whole team has it. In the folder with your code, usually the root of the repository:
 
 ```sh
 dnx Co.Revington.Sightline init
 ```
 
-`init` pins Sightline in the repository's tool manifest (`dotnet-tools.json`), writes [`sightline.json`](#settings) naming the solution, and adds a "Sightline: open the map" task to `.vscode/tasks.json` when the folder uses VS Code. Running it again changes nothing that is already set up. Commit the files it lists; from then on, anyone who clones the repository runs:
+`init` pins Sightline in the repository's tool manifest (`dotnet-tools.json`), writes [`sightline.json`](#settings) with what to open, and adds a "Sightline: open the map" task to `.vscode/tasks.json` when the folder uses VS Code. Running it again changes nothing that is already set up. Commit the files it lists; from then on, anyone who clones the repository runs:
 
 ```sh
 dotnet tool restore
 dotnet sightline
 ```
 
-`dotnet sightline` works from any folder in the repository. Projects that were never restored are restored first, as `dotnet build` does.
+`dotnet sightline` works from any folder in the repository. C# projects that were never restored are restored first, as `dotnet build` does.
 
-**Add it to the app you run**, so the map opens beside it every time you run a Debug build:
+**Add it to the .NET app you run**, so the map opens beside it every time you run a Debug build:
 
 ```sh
 dotnet add package Co.Revington.Sightline.Hosting
@@ -73,7 +73,7 @@ With the app running, the map gets [what the app really does](#the-running-app):
 }
 ```
 
-In Claude Code: `claude mcp add sightline -- dnx Co.Revington.Sightline --yes -- mcp`. In a repository set up with `init`, `dotnet sightline mcp` works too. The tools give an overview of the solution, find symbols, list endpoints and services, trace a request or method both ways, describe a type, list problems, and show what depends on something.
+In Claude Code: `claude mcp add sightline -- dnx Co.Revington.Sightline --yes -- mcp`. In a repository set up with `init`, `dotnet sightline mcp` works too. The tools give an overview of the code, find symbols, list endpoints and services, trace a request or method both ways, describe a type, list problems, and show what depends on something.
 
 **In CI**, `sightline check` fails the build on problems, and the [Sightline GitHub Action](https://github.com/ravindu-rev/sightline-action) comments on each pull request with what it does to the map:
 
@@ -90,13 +90,13 @@ jobs:
       - uses: ravindu-rev/sightline-action@v1
 ```
 
-**Install it just for yourself**: `dotnet tool install --global Co.Revington.Sightline`, then run `sightline` in any solution folder.
+**Install it just for yourself**: `dotnet tool install --global Co.Revington.Sightline`, then run `sightline` in any repository.
 
 ## Commands
 
 ```sh
 sightline [path] [options]            # open the map
-sightline init [folder]               # set a solution up for everyone who works on it
+sightline init [folder]               # set a repository up for everyone who works on it
 sightline check [path]                # list problems; exit code 1 when there are errors
 sightline export [path] --out <dir>   # the map as a static website anyone can open
 sightline diff [path] --base <ref>    # what a change does to the map, for pull requests
@@ -109,7 +109,7 @@ The path is a `.sln`, `.slnx`, `.csproj` or `package.json` file, or a folder. Wi
 | --- | --- |
 | `--port <n>` | Port for the map page. The next free one is used if it is busy. |
 | `--no-open` | Do not open the browser. |
-| `--no-restore` | Do not run `dotnet restore` for projects that were never restored. |
+| `--no-restore` | Do not run `dotnet restore` for C# projects that were never restored. |
 | `--version` | Show the version. |
 | `init --solution <file>` | The solution to open, when the folder has several. Without it, `init` asks. |
 | `init --vscode`, `init --no-vscode` | Add the VS Code task even without a `.vscode` folder, or never. |
@@ -148,7 +148,7 @@ Sightline checks the dependency injection setup and your layer rules as you type
 | `missing-registration` | warning | A class or endpoint that receives a service nobody registered. Creating it fails at run time. |
 | `dependency-cycle` | error | Services that need each other to be created. |
 | `layer-violation` | error | A project that uses a higher layer, or something a rule says it may not use. |
-| `unused-registration` | info | A registration nothing in the solution asks for. |
+| `unused-registration` | info | A registration nothing in the code asks for. |
 
 Layer rules live in `sightline.json`:
 
@@ -193,7 +193,7 @@ Everything stays on your machine. Requests from the page only ever go to apps on
 | `exclude` | none | Projects to leave off the map. Each entry is a project or package name, a folder or a path relative to `sightline.json`, and may use `*` within a folder name and `**` across folders: `"*.Tests"`, `"@acme/e2e"`, `"samples"`, `"tools/**"`. Left-out .NET projects still load when others reference them, so the code that uses them is read correctly. |
 | `port` | `5210` | Port for the map page. |
 | `openBrowser` | `true` | Open the map in the browser at start. |
-| `restore` | `true` | Run `dotnet restore` first for projects that were never restored. |
+| `restore` | `true` | Run `dotnet restore` first for C# projects that were never restored. npm packages are never installed. |
 | `layers`, `rules`, `checks` | none | Layer rules and how serious each problem is; see [Problems](#problems). |
 | `editor` | detected | The editor that **Open in editor** starts: `vscode`, `cursor`, `rider` or `visualstudio`. A command of your own goes in the `SIGHTLINE_EDITOR` environment variable, such as `subl {file}:{line}`; a repository cannot name a program to run. |
 
@@ -203,15 +203,15 @@ The `$schema` line lets editors suggest these settings as you type. Comments and
 
 | View | Shows | Use it to answer |
 | --- | --- | --- |
-| Map | Projects as zones, types listed per namespace. Hover or select a type to see its lines. | What is in this solution? Which project uses which? |
+| Map | Projects as zones, types listed per namespace. Hover or select a type to see its lines. | What is in this repository? Which project uses which? |
 | Flow | Every step behind an endpoint or method, numbered in source order. Interface calls continue in the registered implementation. | What happens when this endpoint is hit? Who ends up calling this method? |
 | Focus | One type in the middle, between what uses it and what it depends on. | What breaks if I change this class? |
 
 The left panel lists endpoints, services, types and projects. The right panel shows details of the selection, its problems, and its source code.
 
-The address keeps the view and the selection, so a link opens the same picture for a teammate with the same solution, and in an exported map. Back and Forward work.
+The address keeps the view and the selection, so a link opens the same picture for a teammate with the same code, and in an exported map. Back and Forward work.
 
-**Tours** walk a new teammate through the solution, one view at a time with a note on each. Write them in the page (**Tours**, then **New tour**); they are saved to `.sightline/tours/<name>.json`, so commit them to share.
+**Tours** walk a new teammate through the code, one view at a time with a note on each. Write them in the page (**Tours**, then **New tour**); they are saved to `.sightline/tours/<name>.json`, so commit them to share.
 
 Shortcuts: `/` find, `1` `2` `3` switch view, `F` fit to screen, double-click to open a project, focus a type or re-root a flow.
 
@@ -241,7 +241,7 @@ The strip at the bottom logs what each edit changed, for example `GetOrderHandle
 
 ## Safety
 
-The server listens on localhost only. Every API call needs a token that is generated at start and embedded in the page, so other websites cannot read or write your source through the browser. Only files that belong to the loaded solution can be read, saved or opened in an editor. **Try it** only sends requests to apps on this machine. Apps report to the map with the same token, which the map hands only to the app that started it.
+The server listens on localhost only. Every API call needs a token that is generated at start and embedded in the page, so other websites cannot read or write your source through the browser. Only files that belong to the projects on the map can be read, saved or opened in an editor. **Try it** only sends requests to apps on this machine. Apps report to the map with the same token, which the map hands only to the app that started it.
 
 ## Working on Sightline
 
@@ -279,7 +279,11 @@ A third job then publishes the extension from that release to the VS Code Market
 | `feat:` | minor | 0.3.1 to 0.4.0 |
 | anything else | patch | 0.3.1 to 0.3.2 |
 
-Both packages, `Co.Revington.Sightline` and `Co.Revington.Sightline.Hosting`, are released together with the same version. To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Directory.Build.props`. To release without a code change, start the workflow by hand from the Actions tab. To publish only the extension of the latest release again, for example after a marketplace was down, start it by hand with **Only publish the VS Code extension of the latest release** ticked. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested on Linux, Windows and macOS by `.github/workflows/ci.yml`, get a comment with what they do to the map, and never publish.
+Both packages, `Co.Revington.Sightline` and `Co.Revington.Sightline.Hosting`, are released together with the same version. To jump to a specific version such as 1.0.0, set `<VersionPrefix>` in `src/Directory.Build.props`. To release without a code change, start the workflow by hand from the Actions tab. To publish only the extension of the latest release again, for example after a marketplace was down, start it by hand with **Only publish the VS Code extension of the latest release** ticked. Release notes leave out `ci`, `test`, `chore`, `docs`, `build` and `style` commits. Pull requests are built and tested by `.github/workflows/ci.yml`, get a comment with what they do to the map, and never publish.
+
+### Runner
+
+Every workflow runs on the repository's self-hosted runner (`runs-on: self-hosted`), a Windows machine. The steps are bash scripts; each job first puts Git Bash ahead of the WSL `bash.exe` in System32 on the PATH, since that one cannot run them. The runner needs Git for Windows and the GitHub CLI (`gh`); each job sets up the .NET SDK and Node.js itself. Pull requests from forks run on that machine too, so keep **Require approval for all external contributors** chosen under Settings, Actions, General.
 
 ### Publishing setup
 

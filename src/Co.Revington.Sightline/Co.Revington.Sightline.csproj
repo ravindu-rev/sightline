@@ -21,8 +21,8 @@
     <PackageType>DotnetTool;McpServer</PackageType>
     <PackageId>Co.Revington.Sightline</PackageId>
     <Title>Sightline</Title>
-    <Description>A live, editable map of a .NET solution. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
-    <PackageTags>dotnet-tool;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;visualization</PackageTags>
+    <Description>A live, editable map of your code in C#, TypeScript and JavaScript, also across languages. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
+    <PackageTags>dotnet-tool;roslyn;csharp;typescript;javascript;architecture;dependency-graph;dependency-injection;aspnetcore;nestjs;express;endpoints;code-map;visualization</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 

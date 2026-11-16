@@ -131,13 +131,13 @@ section() {   # $1 = heading, $2 = pattern of commit subjects that belong under 
 
   echo "### Install or update"
   echo
-  echo "For a solution: run this in its folder. It sets the solution up, or moves one that is set up to this version."
+  echo "For a repository: run this in the folder with your code. It sets Sightline up there, or moves a repository that is set up to this version."
   echo
   echo '```sh'
   echo "dnx $package@$next init"
   echo '```'
   echo
-  echo "Inside the app you run, so the map opens beside it in every Debug run:"
+  echo "Inside the .NET app you run, so the map opens beside it in every Debug run:"
   echo
   echo '```sh'
   echo "dotnet add package $package.Hosting --version $next"

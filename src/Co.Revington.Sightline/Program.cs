@@ -58,7 +58,7 @@ static async Task<int> OpenMapAsync(MapOptions options)
     if (options.Config is not null) Console.WriteLine($"  config  {options.Config.File}");
     Console.WriteLine($"  url     {url}");
     if (options.Config is null && options.AttachPid is null)
-        Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on the solution");
+        Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on this code");
 
     var stopping = app.Lifetime.ApplicationStopping;
     var loop = Task.Run(() => session.RunAsync(stopping));

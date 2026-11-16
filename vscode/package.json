@@ -1,7 +1,7 @@
 {
   "name": "sightline",
-  "displayName": "Sightline for .NET",
-  "description": "A live, editable map of your .NET solution beside your code: projects, dependency injection, HTTP endpoints, request flows and problems.",
+  "displayName": "Sightline Code Map",
+  "description": "A live, editable map of your C#, TypeScript and JavaScript beside your code: projects, dependency injection, HTTP endpoints, request flows across languages, and problems.",
   "version": "0.0.0",
   "publisher": "revington",
   "license": "MIT",
@@ -28,6 +28,7 @@
     "aspnetcore",
     "typescript",
     "javascript",
+    "node",
     "nestjs",
     "express",
     "dependency injection",
@@ -46,7 +47,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "Sightline reads the solution with MSBuild and restores its packages, which runs code from the repository, so it works in trusted folders only."
+      "description": "Sightline reads C# with MSBuild and restores its packages, which runs code from the repository, so it works in trusted folders only."
     },
     "virtualWorkspaces": false
   },
