@@ -76,7 +76,28 @@ internal sealed class FileWatcher : IDisposable
 
         if (_accepts(path)) Add(path);
         else if (gone && Path.GetExtension(file).Length == 0 && !Churning(parts)) Add(Rescan);   // a folder was removed or renamed
-        else if (appeared && !Churning(parts) && Directory.Exists(path)) Add(path, folder: true);   // a folder appeared
+        else if (appeared && !Churning(parts) && IsRealFolder(path)) Add(path, folder: true);   // a folder appeared
+    }
+
+    /// A folder that is there and is not a link. Links are not followed: one could lead anywhere on the machine,
+    /// and what is behind it would then be read as code of the repository.
+    static bool IsRealFolder(string path)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(path);
+            return dir.Exists && dir.LinkTarget is null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    static bool IsLinkFile(FileSystemInfo file)
+    {
+        try { return file.Attributes.HasFlag(FileAttributes.ReparsePoint) && file.LinkTarget is not null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return true; }
     }
 
     bool Churning(string[] parts) => _churning() && parts.Any(Churn.Contains);
@@ -108,7 +129,7 @@ internal sealed class FileWatcher : IDisposable
     /// The files that matter in folders that just appeared. A folder moved in raises one event for the folder
     /// and none for its files, and Linux starts watching a new folder only once it hears of it, so files written
     /// into it straight away (a checkout, a new package with its package.json) raise no event of their own.
-    /// Links are not followed. A folder too big to walk loads everything again instead.
+    /// Links are not followed, to folders or to files. A folder too big to walk loads everything again instead.
     List<string> FilesIn(List<string> folders)
     {
         var found = new List<string>();
@@ -116,8 +137,11 @@ internal sealed class FileWatcher : IDisposable
         var seen = 0;
         while (walk.Count > 0)
         {
+            var folder = walk.Pop();
+            if (!IsRealFolder(folder)) continue;     // checked again: it may have been replaced by a link since
+
             List<FileSystemInfo> entries;
-            try { entries = [.. new DirectoryInfo(walk.Pop()).EnumerateFileSystemInfos()]; }
+            try { entries = [.. new DirectoryInfo(folder).EnumerateFileSystemInfos()]; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }   // gone again, or not readable
 
             foreach (var entry in entries)
@@ -125,10 +149,10 @@ internal sealed class FileWatcher : IDisposable
                 if (++seen > MaxWalk) return [Rescan];
                 if (entry is DirectoryInfo dir)
                 {
-                    if (!dir.Attributes.HasFlag(FileAttributes.ReparsePoint) && !SkipDirs.Contains(dir.Name) && !(_churning() && Churn.Contains(dir.Name)))
+                    if (!SkipDirs.Contains(dir.Name) && !(_churning() && Churn.Contains(dir.Name)))
                         walk.Push(dir.FullName);
                 }
-                else if (!entry.Attributes.HasFlag(FileAttributes.ReparsePoint) && _accepts(entry.FullName))
+                else if (!IsLinkFile(entry) && _accepts(entry.FullName))
                 {
                     found.Add(entry.FullName);
                 }

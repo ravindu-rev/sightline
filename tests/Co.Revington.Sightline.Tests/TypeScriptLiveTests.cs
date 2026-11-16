@@ -124,6 +124,31 @@ public sealed class TypeScriptLiveTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_file_reached_through_a_linked_folder_is_never_read()
+    {
+        var outside = Directory.CreateTempSubdirectory("sightline-ts-outside-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.ts"), "export class Secret {}\n");
+            var link = Path.Combine(_dir, "src", "linked");
+            Assert.True(Links.TryLinkFolder(link, outside), "Could not make a folder link.");
+
+            // Handed to the session directly, as a watcher that followed the link would report it.
+            var secret = Path.Combine(link, "secret.ts");
+            _session.Enqueue(new FilesWork([secret]));
+            Write("src/greeter.ts", "export class Greeter {\n  hello() { return 'hi'; }\n  wave() { return 'o/'; }\n}\n");
+            await Eventually(g => HasMember(g, "Greeter.wave"), "an edit made after the linked file");
+
+            Assert.DoesNotContain(Now.Nodes.Values, n => n.Name == "Secret");
+            Assert.False(_session.IsTracked(secret));
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Unsaved_text_survives_a_reload_of_its_language_and_goes_when_discarded()
     {
         var file = Path.Combine(_dir, "src", "greeter.ts");

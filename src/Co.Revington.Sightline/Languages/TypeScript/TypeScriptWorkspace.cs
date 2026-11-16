@@ -392,7 +392,7 @@ internal sealed class TypeScriptWorkspace : ILanguageWorkspace
             if (File.Exists(path) && !NpmPackages.IsLinkFile(path))
             {
                 var owner = tracked ? null : OwnerOf(_layout, path);
-                if (!tracked && (owner is null || new FileInfo(path).Length > 1024 * 1024)) continue;
+                if (!tracked && (owner is null || new FileInfo(path).Length > 1024 * 1024 || NpmPackages.ThroughLink(owner.Dir, path))) continue;
                 var text = await ReadDiskAsync(path, ct);
                 if (text is null) continue;
                 items.Add(new { path, text, project = owner?.Id });

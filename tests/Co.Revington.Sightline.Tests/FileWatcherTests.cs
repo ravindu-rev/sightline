@@ -45,6 +45,29 @@ public sealed class FileWatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task A_linked_folder_that_appears_is_not_walked()
+    {
+        using var watcher = Watch();
+        var outside = Directory.CreateTempSubdirectory("sightline-watch-outside-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.ts"), "export const s = 1;\n");
+            Assert.True(Links.TryLinkFolder(Path.Combine(_root, "linked"), outside), "Could not make a folder link.");
+
+            // A real file after the link: once it is reported, the link had its chance to be walked.
+            var real = Path.Combine(_root, "real.ts");
+            File.WriteAllText(real, "export const r = 1;\n");
+            await Eventually(real);
+
+            Assert.False(Seen(Path.Combine(_root, "linked", "secret.ts")));
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task The_files_of_a_folder_moved_in_are_reported_but_build_output_is_not_walked()
     {
         using var watcher = Watch();

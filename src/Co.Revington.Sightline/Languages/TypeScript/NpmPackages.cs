@@ -162,6 +162,17 @@ internal static class NpmPackages
     {
         try { return new DirectoryInfo(dir).LinkTarget is not null; }
         catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
+    }
+
+    /// Whether a folder between a package's folder and a file in it is a link. A file reached through one is
+    /// not the repository's, however its path reads.
+    public static bool ThroughLink(string packageDir, string file)
+    {
+        var top = packageDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Length;
+        for (var dir = Path.GetDirectoryName(file); dir is not null && dir.Length > top; dir = Path.GetDirectoryName(dir))
+            if (IsLink(dir)) return true;
+        return false;
     }
 
     /// The code files of a package: below its folder, but not in folders that hold another package.json,
