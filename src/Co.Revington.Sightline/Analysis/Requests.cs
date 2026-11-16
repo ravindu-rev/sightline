@@ -72,20 +72,7 @@ internal static class Requests
     }
 
     /// Names in a route template: "/orders/{id:int}/{*rest}" gives id and rest.
-    public static List<string> RouteNames(string route)
-    {
-        var names = new List<string>();
-        for (var open = route.IndexOf('{'); open >= 0; open = route.IndexOf('{', open + 1))
-        {
-            var close = route.IndexOf('}', open);
-            if (close < 0) break;
-            var inner = route[(open + 1)..close].TrimStart('*');
-            var end = inner.IndexOfAny([':', '=', '?']);
-            var name = end < 0 ? inner : inner[..end];
-            if (name.Length > 0) names.Add(name);
-        }
-        return names;
-    }
+    public static List<string> RouteNames(string route) => Routes.Names(route);
 
     static string? AttributeName(IParameterSymbol p)
     {

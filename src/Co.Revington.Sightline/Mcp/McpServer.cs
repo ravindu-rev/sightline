@@ -38,8 +38,8 @@ internal sealed class McpServer
         Console.SetOut(Console.Error);
 
         var target = command.Target;
-        var options = new LoadOptions(target.Filter, target.Restore, target.Checks, Watch: true, Log: Console.Error);
-        var session = new LiveSession(target.Path, new EventHub(), options);
+        var options = new LoadOptions(target.Filter, target.Restore, target.Checks, Watch: true, Log: Console.Error, Languages: target.Config?.Languages);
+        using var session = new LiveSession(target.Path, new EventHub(), options);
         using var stop = new CancellationTokenSource();
         var loop = Task.Run(() => session.RunAsync(stop.Token));
 
@@ -122,7 +122,8 @@ internal sealed class McpServer
             ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
             ["serverInfo"] = new JsonObject { ["name"] = "sightline", ["title"] = "Sightline", ["version"] = ToolInfo.Version },
             ["instructions"] =
-                $"Sightline has read the .NET solution {_session.Name} with the C# compiler and keeps up with edits. " +
+                $"Sightline has read the code of {_session.Name} with each language's own compiler (C# with Roslyn, TypeScript and " +
+                "JavaScript with the TypeScript compiler) and keeps up with edits. " +
                 "Use it instead of searching files when you need to know how the code fits together: which endpoint runs which " +
                 "handler, what a request calls down to the database, which class is registered for an interface, who uses a type, " +
                 "and which dependency injection problems exist. Start with solution_overview. File paths are relative to " +
@@ -160,10 +161,10 @@ internal sealed class McpServer
         for (var waited = 0; waited < 600; waited++)
         {
             if (_session.Snapshot.Graph is { } graph && _session.Status.State != "loading") return graph;
-            if (_session.Status.State == "error") throw new ToolException("Sightline could not load the solution: " + _session.Status.Message);
+            if (_session.Status.State == "error") throw new ToolException("Sightline could not load the code: " + _session.Status.Message);
             await Task.Delay(250);
         }
-        throw new ToolException($"Sightline is still loading the solution ({_session.Status.Message}). Try again in a moment.");
+        throw new ToolException($"Sightline is still reading the code ({_session.Status.Message}). Try again in a moment.");
     }
 
     static JsonObject Error(JsonNode? id, int code, string message) => new()

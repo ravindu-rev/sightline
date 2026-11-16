@@ -52,7 +52,7 @@ const ICONS = {
 export const icon = (name, size = 14) =>
   `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
-export const TYPE_CODES = { class: 'C', interface: 'I', record: 'R', 'record struct': 'R', struct: 'S', enum: 'E' };
+export const TYPE_CODES = { class: 'C', interface: 'I', record: 'R', 'record struct': 'R', struct: 'S', enum: 'E', module: 'M', type: 'T', object: 'O' };
 
 /** Letter badge for a type kind, like a station code. */
 export const typeCode = (kind) => `<span class="code c-${esc(String(kind).split(' ')[0])}">${TYPE_CODES[kind] ?? 'C'}</span>`;
@@ -62,11 +62,29 @@ export const verbChip = (verb) => `<span class="verb v-${esc(String(verb).split(
 const TAG_LABELS = {
   controller: 'controller', dbcontext: 'db context', hosted: 'background', hub: 'hub', middleware: 'middleware',
   handler: 'handler', abstract: 'abstract', static: 'static', entrypoint: 'entry point', exception: 'exception',
+  module: 'module', entity: 'entity',
 };
 
 export const tagLabel = (tag) => TAG_LABELS[tag] ?? tag;
 
 export const fileName = (path) => String(path ?? '').split(/[\\/]/).pop();
+
+/** The editor mode and indent for a file, by its extension. */
+export function languageOf(path) {
+  const ext = (String(path ?? '').match(/\.[^./\\]+$/)?.[0] ?? '').toLowerCase();
+  if (['.ts', '.mts', '.cts'].includes(ext)) return { mode: 'text/typescript', indent: 2 };
+  if (ext === '.tsx') return { mode: 'text/typescript-jsx', indent: 2 };
+  if (ext === '.jsx') return { mode: 'text/jsx', indent: 2 };
+  if (['.js', '.mjs', '.cjs'].includes(ext)) return { mode: 'text/javascript', indent: 2 };
+  if (ext === '.json') return { mode: 'application/json', indent: 2 };
+  return { mode: 'text/x-csharp', indent: 4 };
+}
+
+/** "NuGet package" or "npm package". */
+export const packageWord = (n) => (n?.meta?.ecosystem === 'npm' ? 'npm package' : 'NuGet package');
+
+/** A project's own language, when it is not C#: "TypeScript", "JavaScript". */
+export const languageWord = (project) => project?.meta?.language ?? '';
 
 export const debounce = (fn, ms) => {
   let t;

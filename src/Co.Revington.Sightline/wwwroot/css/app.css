@@ -173,8 +173,11 @@ code, .mono { font-family: var(--font-code); font-size: 12px; }
   flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px;
   font: 700 11.5px/1 var(--font-sign); color: var(--panel); background: var(--zone, var(--ink-2));
 }
-.code.c-interface { background: transparent; color: var(--zone, var(--ink-2)); box-shadow: inset 0 0 0 1.5px var(--zone, var(--ink-2)); }
+.code.c-interface, .code.c-type { background: transparent; color: var(--zone, var(--ink-2)); box-shadow: inset 0 0 0 1.5px var(--zone, var(--ink-2)); }
 .code.c-enum, .code.c-record { border-radius: 9px; }
+/* A JavaScript or TypeScript file: its functions and the code that runs when it loads. */
+.code.c-module { border-radius: 2px; background: color-mix(in srgb, var(--zone, var(--ink-2)) 72%, var(--panel)); }
+.code.c-object { border-radius: 2px 9px 2px 9px; }
 
 .chip {
   flex: none; padding: 0 6px; border-radius: 9px; font-size: 11px; line-height: 17px;

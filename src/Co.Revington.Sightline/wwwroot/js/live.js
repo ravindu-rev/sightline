@@ -173,7 +173,12 @@ export class Live {
       }
     };
     const values = new Map((shape.params ?? []).map((p) => [p.name.toLowerCase(), unquote(p.sample)]));
-    const path = ep.meta.route.replace(/\{\*{0,2}([^}:=?]+)[^}]*\}/g, (_, name) => encodeURIComponent(values.get(name.toLowerCase()) ?? name));
+    // Values in the route: {id:int} (ASP.NET Core), :id (Express and its kind), [id] and [...slug] (Next.js).
+    const fill = (name) => encodeURIComponent(values.get(name.toLowerCase()) ?? name);
+    const path = ep.meta.route
+      .replace(/\{\*{0,2}([^}:=?]+)[^}]*\}/g, (_, name) => fill(name))
+      .replace(/(^|\/):([A-Za-z0-9_$]+)(\([^)]*\))?[?*+]?/g, (_, slash, name) => slash + fill(name))
+      .replace(/\[{1,2}(?:\.\.\.)?([^\]]+)\]{1,2}/g, (_, name) => fill(name));
     const query = (shape.params ?? []).filter((p) => p.in === 'query').map((p) => `${encodeURIComponent(p.name)}=${encodeURIComponent(unquote(p.sample))}`).join('&');
     const headers = (shape.params ?? []).filter((p) => p.in === 'header').map((p) => `${p.name}: ${unquote(p.sample)}`);
     if (shape.bodySample) headers.unshift('Content-Type: application/json');
@@ -194,6 +199,8 @@ export class Live {
 
   /** The address of the app that serves this endpoint: an app with the project's name, http before https. */
   #defaultBase(ep) {
+    // Only .NET apps report their addresses; for code in another language, the address is typed in.
+    if (ep && this.store.node(ep.project)?.meta.language) return '';
     const project = ep ? this.store.node(ep.project)?.name : null;
     const apps = [...this.apps].sort((a, b) => Number(b.running) - Number(a.running) || Number(b.app === project) - Number(a.app === project));
     const addresses = apps.flatMap((a) => a.addresses ?? []);
@@ -260,7 +267,9 @@ export class Live {
     }
     const r = st.response;
     if (!r) {
-      if (!this.apps.some((a) => a.running))
+      const dotnet = !this.store.node(this.store.node(id)?.project)?.meta.language;
+      if (!dotnet) p.result.append(h('span', { class: 'dim' }, 'Start the app, then type its address above, such as http://localhost:3000.'));
+      else if (!this.apps.some((a) => a.running))
         p.result.append(h('span', { class: 'dim' }, 'Run the app with Co.Revington.Sightline.Hosting and its address fills in by itself, or type it above.'));
       return;
     }

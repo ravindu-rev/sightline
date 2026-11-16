@@ -59,19 +59,3 @@ internal static class Sym
         return false;
     }
 }
-
-internal static class Routes
-{
-    /// Joins route parts with single slashes and a leading slash.
-    public static string Join(params string?[] parts)
-    {
-        var segments = new List<string>();
-        foreach (var p in parts)
-        {
-            if (string.IsNullOrEmpty(p)) continue;
-            var t = p.Trim().Trim('/');
-            if (t.Length > 0) segments.Add(t);
-        }
-        return "/" + string.Join('/', segments);
-    }
-}

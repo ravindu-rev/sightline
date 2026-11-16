@@ -9,12 +9,24 @@ namespace Co.Revington.Sightline.Commands;
 /// stdout stays clean for JSON and for pipes.
 internal static class OneShot
 {
-    public static async Task<(LiveSession Session, Snapshot Snapshot)> LoadAsync(SolutionTarget target, CancellationToken ct = default)
+    /// The session is the caller's to dispose: it holds the compilers, and for JavaScript a Node.js process.
+    /// packagesFrom: for a checkout without installed npm packages, where to borrow them from.
+    public static async Task<(LiveSession Session, Snapshot Snapshot)> LoadAsync(SolutionTarget target, CancellationToken ct = default,
+        Languages.PackageMirror? packagesFrom = null)
     {
-        var options = new LoadOptions(target.Filter, target.Restore, target.Checks, Watch: false, Log: Console.Error);
+        var options = new LoadOptions(target.Filter, target.Restore, target.Checks, Watch: false, Log: Console.Error,
+            Languages: target.Config?.Languages, PackagesFrom: packagesFrom);
         var session = new LiveSession(target.Path, new EventHub(), options);
-        var snapshot = await session.LoadOnceAsync(ct);
-        return (session, snapshot);
+        try
+        {
+            var snapshot = await session.LoadOnceAsync(ct);
+            return (session, snapshot);
+        }
+        catch
+        {
+            session.Dispose();
+            throw;
+        }
     }
 
     /// The top of the git repository that holds a folder, or the folder itself when there is none.

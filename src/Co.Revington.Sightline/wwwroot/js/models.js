@@ -1,7 +1,7 @@
 // Builds what each view shows from the graph in the store.
 // All text that comes from the analyzed code passes through esc() before it becomes markup.
 
-import { esc, icon, typeCode, verbChip, tagLabel, plural } from './ui.js';
+import { esc, icon, typeCode, verbChip, tagLabel, plural, packageWord } from './ui.js';
 import { byName } from './store.js';
 
 /** Edge kind -> filter group shown as a toggle in the toolbar. */
@@ -16,7 +16,7 @@ export const KIND_GROUPS = [['inject', 'Injects'], ['call', 'Calls'], ['inherit'
 export const KIND_WORDS = {
   projectRef: 'project reference', unused: 'project reference, no usage found', packageRef: 'package reference',
   injects: 'injects', calls: 'calls', dispatches: 'sends a message to', handles: 'handled by', db: 'database access',
-  http: 'outbound HTTP call', inherits: 'inherits', implements: 'implements', resolves: 'resolves to',
+  http: 'HTTP call', inherits: 'inherits', implements: 'implements', resolves: 'resolves to',
   creates: 'creates', references: 'uses type',
 };
 
@@ -51,7 +51,7 @@ function typeNode(store, t, extra = {}) {
       (tag ? `<span class="chip">${esc(tagLabel(tag))}</span>` : '') +
       (t.meta.lifetime && !extra.plain && !extra.compact ? `<span class="chip life">${esc(t.meta.lifetime)}</span>` : '') +
       badge(store, t.id),
-    title: `${t.meta.typeKind} ${t.ns ? t.ns + '.' : ''}${t.name}`,
+    title: `${t.meta.typeKind} ${t.ns ? t.ns + (t.ns.includes('/') ? '/' : '.') : ''}${t.name}`,
     ...extra,
   };
 }
@@ -59,7 +59,7 @@ function typeNode(store, t, extra = {}) {
 function memberNode(store, m, extra = {}) {
   const owner = store.node(m.parent);
   const callable = m.meta.memberKind === 'method' || m.meta.memberKind === 'ctor';
-  const name = (m.meta.memberKind === 'ctor' ? 'new ' : '') + m.name + (callable ? '()' : '');
+  const name = (m.meta.memberKind === 'ctor' ? 'new ' : '') + m.name + (callable && !m.name.startsWith('(') ? '()' : '');
   // extra.note: how the flow got here ("via IOrderRepository"); extra.more: steps hidden by the depth limit
   return {
     id: m.id, kind: 'member', zone: store.zoneClass(m.id), ref: m.id,
@@ -86,7 +86,7 @@ function projectNode(store, p, typeCount, endpointCount) {
     id: p.id, kind: 'project', zone: store.zoneClass(p.id), ref: p.id,
     html: `<span class="col"><span class="t">${esc(p.name)}</span><span class="meta">` +
       `<span class="chip">${esc(p.meta.projectKind)}</span>` +
-      (p.meta.tfm ? `<span class="chip">${esc(p.meta.tfm)}</span>` : '') +
+      (p.meta.tfm ?? p.meta.language ? `<span class="chip">${esc(p.meta.tfm ?? p.meta.language)}</span>` : '') +
       `<span class="s">${esc(counts)}</span></span></span>${badge(store, p.id)}`,
     title: 'Double-click to open this project',
   };
@@ -123,8 +123,8 @@ function push(map, key, value) {
 }
 
 /** "Shop.Application.Orders" inside project "Shop.Application" reads as "Orders". */
-function shortNamespace(ns, projectName) {
-  if (!ns) return '(global)';
+function shortNamespace(ns, projectName, language) {
+  if (!ns) return language ? '(top folder)' : '(global)';
   if (ns === projectName) return ns;
   return ns.startsWith(projectName + '.') ? ns.slice(projectName.length + 1) : ns;
 }
@@ -167,7 +167,7 @@ export function mapModel(store, st) {
 
     for (const [ns, list] of [...byNs].sort((a, b) => a[0].localeCompare(b[0]))) {
       const nsId = `ns:${p.id}:${ns}`;
-      const label = shortNamespace(ns, p.name);
+      const label = shortNamespace(ns, p.name, p.meta.language);
 
       if (crowded && !st.expanded.has(nsId)) {
         nodes.push({
@@ -204,7 +204,7 @@ export function mapModel(store, st) {
       nodes.push({
         id: k.id, kind: 'package', ref: k.id,
         html: `<span class="t">${esc(k.name)}</span><span class="s">${esc((k.meta.versions ?? []).join(', '))}</span>`,
-        title: 'NuGet package',
+        title: packageWord(k),
       });
       rep.set(k.id, k.id);
     }
@@ -249,12 +249,14 @@ export function mapModel(store, st) {
 
     const ps = projectOf(e.source), pt = projectOf(e.target);
     const direct = ps && pt && ps !== pt && references.has(ps + ARROW + pt);
-    if (direct) merge(between, ps, pt, e);
+    // A request that reaches an endpoint of another project joins the two, with no reference between them.
+    const overHttp = e.kind === 'http' && ps && pt && ps !== pt && store.node(e.target)?.kind === 'endpoint';
+    if (direct || overHttp) merge(between, ps, pt, e);
     if (isRef || !st.kinds.has(KIND_GROUP[e.kind])) continue;
 
     const s = repOf(e.source), t = repOf(e.target);
     if (!s || !t || s === t) continue;
-    if (direct && collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
+    if ((direct || overHttp) && collapsed.has(s) && collapsed.has(t)) continue;       // the project line already says this
     merge(within, s, t, e);
   }
 
@@ -265,6 +267,7 @@ export function mapModel(store, st) {
     let kind = RANK.find((k) => m.kinds.has(k));
     let label = '';
     if (kind === 'projectRef' && uses === 0) [kind, label] = ['unused', 'no usage found'];
+    else if (kind === 'http') label = plural(uses, 'HTTP call');
     else if (kind !== 'packageRef') label = plural(uses, 'use');
     return { ...m, kind, label, title: describeKinds(m.kinds) };
   });
@@ -277,7 +280,7 @@ export function mapModel(store, st) {
 // -------------------------------------------------------------------- flow: what happens after an endpoint or method
 
 const STEP_KINDS = new Set(['handles', 'calls', 'dispatches', 'db', 'http']);
-const CALLER_KINDS = new Set(['handles', 'calls', 'dispatches']);
+const CALLER_KINDS = new Set(['handles', 'calls', 'dispatches', 'http']);
 
 // A flow stops growing at this many stations; the rest shows as "+N" on the stations where it stops.
 // Past this, a picture is unreadable anyway, and laying it out takes seconds.
@@ -324,7 +327,8 @@ export function flowModel(store, st) {
       if (!target) return;
 
       // Database and HTTP ends are drawn once per caller so lines stay short.
-      if (e.kind === 'db' || e.kind === 'http') {
+      // A request to an endpoint on the map goes on there, in whatever language it is written.
+      if (e.kind === 'db' || (e.kind === 'http' && target.kind !== 'endpoint')) {
         const tid = `${id}>${e.kind}`;
         add(tid, terminalNode(tid, e.kind, e.kind === 'db' ? target.name : 'HTTP call', e.label ?? '', e.target));
         link(id, tid, e.kind, { step }).refs.push(e.id);

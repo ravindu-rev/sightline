@@ -42,7 +42,7 @@ export class Tours {
       `<button class="tool" data-act="tourPlay" data-id="${esc(t.id)}">${icon('play')}Start</button>` +
       (editable ? `<button class="tool" data-act="tourEdit" data-id="${esc(t.id)}">Edit</button>` : '') + '</div>').join('');
 
-    return `<div class="sign"><div><h2>Tours</h2><p>A walk through the solution, one view at a time, with a note on each. ` +
+    return `<div class="sign"><div><h2>Tours</h2><p>A walk through the code, one view at a time, with a note on each. ` +
       `Tours live in the repository in .sightline/tours, so everyone who clones it gets them.</p></div></div>` +
       (rows || '<p class="dim">No tours yet.</p>') +
       (editable ? `<div class="acts"><button class="tool" data-act="tourNew" data-id="">${icon('plus')}New tour</button></div>` : '');
@@ -137,7 +137,7 @@ export class Tours {
     const step = tour.steps[index];
     const id = this.store.node(step.id) ? step.id : this.#byLabel(step.label);
     if (id) location.hash = `#view=${step.view}&id=${encodeURIComponent(id)}${step.dir === 'up' ? '&dir=up' : ''}`;
-    else toast(`"${step.label}" is not in the solution any more.`);
+    else toast(`"${step.label}" is not on the map any more.`);
     this.#renderCard(step, index, tour);
   }
 

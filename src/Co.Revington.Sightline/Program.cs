@@ -37,7 +37,7 @@ static async Task<int> OpenMapAsync(MapOptions options)
     var port = FindFreePort(options.Port);
     var token = options.Token ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
     var hub = new EventHub();
-    var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore, options.Checks));
+    using var session = new LiveSession(options.Target, hub, new LoadOptions(options.Filter, options.Restore, options.Checks, Languages: options.Config?.Languages));
     var companions = new Companions(closeWithApps: options.AttachPid is not null, Companions.DefaultGrace);
     var server = new ServerOptions(companions, options.Config?.Dir, options.Config?.Editor);
     var app = WebApp.Build(session, hub, port, token, options.UiDir, server);
@@ -58,7 +58,7 @@ static async Task<int> OpenMapAsync(MapOptions options)
     if (options.Config is not null) Console.WriteLine($"  config  {options.Config.File}");
     Console.WriteLine($"  url     {url}");
     if (options.Config is null && options.AttachPid is null)
-        Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on the solution");
+        Console.WriteLine("  tip     \"sightline init\" saves this setup for everyone who works on this code");
 
     var stopping = app.Lifetime.ApplicationStopping;
     var loop = Task.Run(() => session.RunAsync(stopping));

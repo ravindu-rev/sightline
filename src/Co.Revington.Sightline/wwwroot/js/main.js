@@ -274,7 +274,7 @@ function readLink() {
 
   const id = p.get('id');
   const sel = p.get('sel');
-  if (id && !store.node(id)) toast('The link points at something that is not in this solution any more.');
+  if (id && !store.node(id)) toast('The link points at something that is not on this map any more.');
 
   applyingLink = true;
   state.view = name;
@@ -390,9 +390,9 @@ function renderEmpty() {
   const status = store.status;
 
   if (!store.projects.length) {
-    if (status.state === 'error') [title, text] = ['Could not open the solution', status.message];
-    else if (status.state === 'loading') [title, text] = ['Reading the solution', status.message];
-    else [title, text] = ['No C# projects found', 'Start Sightline with the path to a .sln, .slnx or .csproj file.'];
+    if (status.state === 'error') [title, text] = ['Could not open the code', status.message];
+    else if (status.state === 'loading') [title, text] = ['Reading the code', status.message];
+    else [title, text] = ['No projects found', 'Start Sightline in a folder with a .sln, .slnx, .csproj or package.json file, or with the path to one.'];
   } else if (!model.nodes.length && state.view === 'flow') {
     [title, text] = ['Pick something to trace', 'Choose an endpoint on the left to see every step it runs, from the route down to the database.'];
   } else if (!model.nodes.length && state.view === 'focus') {
@@ -438,13 +438,13 @@ function renderProblemsButton() {
   button.append(problems.length ? plural(problems.length, 'problem') : 'No problems');
 }
 
-/** A new GitHub issue with the version and the size of the solution filled in; no names or paths. */
+/** A new GitHub issue with the version and the size of the map filled in; no names or paths. */
 function feedbackLink() {
   const c = store.info.counts ?? {};
   const body = [
     '**What happened, or what would help?**', '', '', '---',
     `Sightline ${store.info.version ?? api.exportInfo?.version ?? ''}${api.mode === 'export' ? ' (exported map)' : ''}`,
-    `Solution size: ${c.projects ?? '?'} projects, ${c.types ?? '?'} types, ${c.endpoints ?? '?'} endpoints`,
+    `Size: ${c.projects ?? '?'} projects, ${c.types ?? '?'} types, ${c.endpoints ?? '?'} endpoints${store.info.languages?.length ? ' (' + store.info.languages.join(', ') + ')' : ''}`,
   ].join('\n');
   return 'https://github.com/ravindu-rev/sightline/issues/new?labels=feedback&body=' + encodeURIComponent(body);
 }
@@ -616,7 +616,7 @@ function pushFeed(change) {
   if (!parts.length) return;
   feed.unshift({
     time: new Date().toLocaleTimeString([], { hour12: false }),
-    files: (change.files ?? []).map(fileName).join(', ') || 'whole solution',
+    files: (change.files ?? []).map(fileName).join(', ') || 'all files',
     parts: parts.slice(0, 4),
     ms: change.ms,
     go: change.added[0]?.id ?? change.changed[0]?.id ?? plus[0]?.source ?? minus[0]?.source,
@@ -679,7 +679,7 @@ function runFind() {
 function findRow(n) {
   if (n.kind === 'endpoint') return verbChip(n.meta.verb) + `<span class="route grow">${esc(n.meta.route)}</span>`;
   if (n.kind === 'type') return typeCode(n.meta.typeKind) + `<span class="grow">${esc(n.name)}</span><span class="dim">${esc(n.ns ?? '')}</span>`;
-  if (n.kind === 'member') return `<span class="mk">M</span><span class="grow">${esc(store.label(n.id))}</span><span class="dim">${esc(n.meta.memberKind)}</span>`;
+  if (n.kind === 'member') return `<span class="mk">M</span><span class="grow">${esc(store.label(n.id))}</span><span class="dim">${esc(n.meta.memberKind === 'method' && store.node(n.parent)?.meta.typeKind === 'module' ? 'function' : n.meta.memberKind)}</span>`;
   return `<span class="grow">${esc(n.name)}</span><span class="dim">${esc(n.kind)}</span>`;
 }
 

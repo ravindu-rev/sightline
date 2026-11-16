@@ -23,14 +23,14 @@
 
       <div class="find">
         <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
-        <input id="find" type="search" placeholder="Find a class, method, endpoint or package" autocomplete="off" spellcheck="false" aria-label="Find in the solution">
+        <input id="find" type="search" placeholder="Find a class, function, endpoint or package" autocomplete="off" spellcheck="false" aria-label="Find in the code">
         <div id="find-results" class="find-results" hidden></div>
       </div>
 
       <button class="tool warn" id="notes" hidden></button>
       <button class="tool prob" id="problems" hidden title="Problems in the dependency injection setup and the layer rules"></button>
       <button class="tool" id="requests" hidden title="Requests the running app handled"></button>
-      <button class="tool" id="tours" hidden title="Guided tours through this solution"></button>
+      <button class="tool" id="tours" hidden title="Guided tours through this code"></button>
       <div class="status" id="status" data-state="loading"><i></i><span>Starting</span></div>
       <a class="made" id="made-with" href="https://sightline.revington.co" target="_blank" rel="noopener" hidden>Made with Sightline</a>
       <a class="tool icon-only" id="feedback" target="_blank" rel="noopener" title="Report a problem or suggest something" aria-label="Feedback">
@@ -41,13 +41,13 @@
       </button>
     </header>
 
-    <aside class="index" aria-label="Index of the solution">
+    <aside class="index" aria-label="Index of the code">
       <div class="tabs" role="tablist"></div>
       <input class="filter" type="search" autocomplete="off" spellcheck="false" aria-label="Filter the list">
       <div class="list"></div>
     </aside>
 
-    <main class="canvas" aria-label="Map of the solution">
+    <main class="canvas" aria-label="Map of the code">
       <div class="canvas-tools"></div>
       <div class="empty" hidden></div>
       <div class="legend" hidden></div>
@@ -86,7 +86,7 @@
           </span>
         </div>
         <div class="editor-body" id="ed-body">
-          <div class="editor-empty" id="ed-empty">Select a class, method or endpoint to see and edit its code here.</div>
+          <div class="editor-empty" id="ed-empty">Select a class, function or endpoint to see and edit its code here.</div>
         </div>
       </section>
     </aside>
@@ -102,6 +102,9 @@
   <script src="/lib/elk.bundled.js"></script>
   <script src="/lib/codemirror/codemirror.js"></script>
   <script src="/lib/codemirror/clike.js"></script>
+  <script src="/lib/codemirror/javascript.js"></script>
+  <script src="/lib/codemirror/xml.js"></script>
+  <script src="/lib/codemirror/jsx.js"></script>
   <script src="/lib/codemirror/matchbrackets.js"></script>
   <script src="/lib/codemirror/closebrackets.js"></script>
   <script src="/lib/codemirror/active-line.js"></script>

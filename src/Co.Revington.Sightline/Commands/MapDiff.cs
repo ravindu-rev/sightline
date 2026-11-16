@@ -74,7 +74,7 @@ internal static class MapDiff
     static async Task<JsonNode> GraphAsync(SolutionTarget target)
     {
         var (session, snapshot) = await OneShot.LoadAsync(target);
-        return Exporter.GraphJson(snapshot, session, new PathScrubber(OneShot.RepoRoot(session.RootDir)));
+        using (session) return Exporter.GraphJson(snapshot, session, new PathScrubber(OneShot.RepoRoot(session.RootDir)));
     }
 
     /// The map at another commit: checked out next to the repository with "git worktree", read, removed.
@@ -83,7 +83,7 @@ internal static class MapDiff
         var start = Directory.Exists(head.Path) ? head.Path : Path.GetDirectoryName(head.Path)!;
         var repo = OneShot.RepoRoot(start);
         if (!Directory.Exists(Path.Combine(repo, ".git")) && !File.Exists(Path.Combine(repo, ".git")))
-            throw new InvalidOperationException("--base needs the solution to be in a git repository.");
+            throw new InvalidOperationException("--base needs the code to be in a git repository.");
 
         var temp = Path.Combine(Path.GetTempPath(), "sightline-base-" + Guid.NewGuid().ToString("N")[..8]);
         var added = await Git(repo, "worktree", "add", "--detach", temp, reference);
@@ -104,8 +104,10 @@ internal static class MapDiff
 
             var target = new SolutionTarget(path, config,
                 config is null ? ProjectFilter.None : new ProjectFilter(config.Dir, config.Exclude), head.Restore);
-            var (session, snapshot) = await OneShot.LoadAsync(target);
-            return Exporter.GraphJson(snapshot, session, new PathScrubber(temp));
+            // The checkout has no node_modules; it reads the packages installed in the working tree, so both
+            // sides of the comparison see the same types.
+            var (session, snapshot) = await OneShot.LoadAsync(target, packagesFrom: new Languages.PackageMirror(temp, repo));
+            using (session) return Exporter.GraphJson(snapshot, session, new PathScrubber(temp));
         }
         finally
         {
@@ -324,7 +326,7 @@ internal static class MapDiff
         }
 
         sb.AppendLine();
-        sb.AppendLine($"<sub>Made with [Sightline](https://sightline.revington.co) {ToolInfo.Version}, a live map of .NET solutions.</sub>");
+        sb.AppendLine($"<sub>Made with [Sightline](https://sightline.revington.co) {ToolInfo.Version}, a live map of your code.</sub>");
         return sb.ToString();
 
         void Section(string title, List<Change> changes)

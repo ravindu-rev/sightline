@@ -56,7 +56,18 @@ internal static class Checks
         /// Type names that Razor files (.razor, .cshtml) ask for with @inject. Razor is not read as C#,
         /// so these are matched by name.
         public HashSet<string> RazorInjects { get; } = new(StringComparer.Ordinal);
+
+        /// Project id -> its language, for problems worded the way that ecosystem fixes them.
+        public Dictionary<string, string> Languages { get; } = new(StringComparer.Ordinal);
         public bool Scanning { get; set; }
+
+        /// True for things in JavaScript or TypeScript projects, where NestJS does the injecting.
+        public bool IsNode(string id)
+        {
+            if (!Graph.Nodes.TryGetValue(id, out var n)) return id.StartsWith("token:", StringComparison.Ordinal);
+            var project = n.Kind == "project" ? n.Id : n.Project;
+            return project is not null && Languages.GetValueOrDefault(project) is { } language && language != "C#";
+        }
         public bool Decorating { get; set; }
         public List<Problem> Problems { get; } = [];
 
@@ -84,7 +95,11 @@ internal static class Checks
     {
         var c = new Context { Graph = g, Options = options };
         Collect(c, docs, endpointsByKey);
-        foreach (var p in projects) c.RazorInjects.UnionWith(p.RazorInjects);
+        foreach (var p in projects)
+        {
+            c.RazorInjects.UnionWith(p.RazorInjects);
+            c.Languages[p.Id] = p.Language;
+        }
 
         if (c.Severity("captive-dependency") is { } captive) CaptiveDependencies(c, captive);
         if (c.Severity("missing-registration") is { } missing) MissingRegistrations(c, missing);
@@ -99,7 +114,7 @@ internal static class Checks
             .ThenBy(p => p.File, StringComparer.OrdinalIgnoreCase)
             .ThenBy(p => p.Line)
             .ToList();
-        return (problems, Coverage(g, docs));
+        return (problems, Coverage(g, docs, c.Languages));
     }
 
     static void Collect(Context c, IReadOnlyList<DocFacts> docs, Dictionary<string, List<string>> endpointsByKey)
@@ -250,13 +265,28 @@ internal static class Checks
                     .Where(e => e.Kind == "implements" && e.Target == service.Id)
                     .Select(e => c.Graph.Nodes.GetValueOrDefault(e.Source)?.Name)
                     .FirstOrDefault(n => n is not null);
-                var example = service.Meta.GetValueOrDefault("typeKind") as string == "interface" && impl is not null
-                    ? $"services.AddScoped<{dep.Fact.ServiceName}, {impl}>()"
-                    : $"services.AddScoped<{dep.Fact.ServiceName}>()";
                 var scanning = c.Scanning
                     ? " The solution also registers services by scanning assemblies, which Sightline cannot follow, so this may be registered there."
                     : "";
 
+                if (c.IsNode(consumer))
+                {
+                    // NestJS: providers of a module. An interface is gone at run time, so it needs a token.
+                    var shape = service.Meta.GetValueOrDefault("typeKind") as string;
+                    var fix = shape is "interface" or "type"
+                        ? $"{dep.Fact.ServiceName} is {(shape == "type" ? "a type" : "an interface")}, which does not exist at run time, so Nest cannot inject it by its type: " +
+                          $"provide it under a token, for example {{ provide: '{dep.Fact.ServiceName}', useClass: {impl ?? "SomeClass"} }}, and ask for it with @Inject('{dep.Fact.ServiceName}')."
+                        : $"Add it to the providers of a module, for example providers: [{dep.Fact.ServiceName}].";
+                    c.Add("missing-registration", severity, "A provider that no module provides",
+                        $"{c.Label(consumer)} receives {dep.Fact.ServiceName}, but no module provides {dep.Fact.ServiceName}, so Nest cannot create " +
+                        $"{c.Label(consumer)} (\"Nest can't resolve dependencies of {c.Label(consumer)}\"). {fix}",
+                        dep.File, dep.Fact.Line, consumer, service.Id);
+                    continue;
+                }
+
+                var example = service.Meta.GetValueOrDefault("typeKind") as string == "interface" && impl is not null
+                    ? $"services.AddScoped<{dep.Fact.ServiceName}, {impl}>()"
+                    : $"services.AddScoped<{dep.Fact.ServiceName}>()";
                 c.Add("missing-registration", severity, "A service that is never registered",
                     $"{c.Label(consumer)} receives {dep.Fact.ServiceName}, but no registration for {dep.Fact.ServiceName} was found, " +
                     $"so creating {c.Label(consumer)} fails at run time (\"Unable to resolve service for type\"). " +
@@ -295,10 +325,14 @@ internal static class Checks
             path.Add(first);
 
             var names = path.Select(c.Label).ToList();
-            c.Add("dependency-cycle", severity, "Services that need each other",
-                $"Creating {names[0]} needs {string.Join(", which needs ", names.Skip(1))}. Dependency injection cannot create any of them " +
-                "(\"A circular dependency was detected\"). Break the loop: move the shared part into its own service, or ask for one of " +
-                "them later through IServiceProvider or Lazy<T>.",
+            var message = cycle.Any(c.IsNode)
+                ? $"Creating {names[0]} needs {string.Join(", which needs ", names.Skip(1))}. Nest cannot create any of them " +
+                  "(\"Nest cannot create the module instance\" or \"A circular dependency between modules\"). Break the loop: move the shared part " +
+                  "into its own provider, or inject one of them with forwardRef(() => ...)."
+                : $"Creating {names[0]} needs {string.Join(", which needs ", names.Skip(1))}. Dependency injection cannot create any of them " +
+                  "(\"A circular dependency was detected\"). Break the loop: move the shared part into its own service, or ask for one of " +
+                  "them later through IServiceProvider or Lazy<T>.";
+            c.Add("dependency-cycle", severity, "Services that need each other", message,
                 dep.Dep.File, dep.Dep.Fact.Line, [.. cycle.OrderBy(x => x, StringComparer.Ordinal)]);
         }
     }
@@ -366,11 +400,13 @@ internal static class Checks
             if (Regex.IsMatch(node.Name, @"(Handler|Validator|Consumer|Filter|Middleware|Behavior|Behaviour|Profile|HostedService)(<.*>)?$")) continue;
             // UI frameworks (MAUI, WPF, Blazor) create pages, views and view models by type, through navigation.
             if (Regex.IsMatch(node.Name, @"(View|Page|ViewModel|Window|Dialog|Component|Form)(<.*>)?$")) continue;
+            // NestJS puts these to work by itself: guards, interceptors, pipes, strategies, resolvers, gateways, ...
+            if (c.IsNode(service) && Regex.IsMatch(node.Name, @"(Guard|Interceptor|Pipe|Strategy|Resolver|Gateway|Listener|Subscriber|Processor|Scheduler|Seeder|Saga|Module|Controller|Filter)$")) continue;
 
             var r = regs[0];
             c.Add("unused-registration", severity, "A registration nothing asks for",
                 $"{node.Name} is registered{(r.Owner is not null ? " in " + c.Label(r.Owner) : "")}, but no class, endpoint or lookup " +
-                "in the solution asks for it. A package or reflection may still use it; otherwise the registration can go.",
+                "in the code asks for it. A package or reflection may still use it; otherwise the registration can go.",
                 r.File, r.Line, service);
         }
     }
@@ -421,7 +457,7 @@ internal static class Checks
         foreach (var ((from, to), where) in uses.OrderBy(u => u.Key.From).ThenBy(u => u.Key.To))
         {
             var fromName = names.GetValueOrDefault(from) ?? from;
-            var toName = names.GetValueOrDefault(to) ?? (to.StartsWith("pkg:", StringComparison.Ordinal) ? to[4..] : to);
+            var toName = names.GetValueOrDefault(to) ?? c.Graph.Nodes.GetValueOrDefault(to)?.Name ?? (to.StartsWith("pkg:", StringComparison.Ordinal) ? to[4..] : to);
 
             if (layerOf.TryGetValue(from, out var a) && layerOf.TryGetValue(to, out var b) && a > b)
             {
@@ -445,7 +481,7 @@ internal static class Checks
 
     // ---------------------------------------------------------------- coverage
 
-    static List<CoverageNote> Coverage(Graph g, IReadOnlyList<DocFacts> docs)
+    static List<CoverageNote> Coverage(Graph g, IReadOnlyList<DocFacts> docs, Dictionary<string, string> languages)
     {
         var notes = docs
             .SelectMany(d => d.Coverage.Select(x => (Doc: d, Fact: x)))
@@ -458,12 +494,18 @@ internal static class Checks
                 .ToList()))
             .ToList();
 
-        var unresolved = docs.Where(d => d.Unresolved > 0).OrderByDescending(d => d.Unresolved).ToList();
-        var total = unresolved.Sum(d => d.Unresolved);
-        if (total > 0)
+        // C# counts calls that did not bind; JavaScript and TypeScript count imports of packages that are not installed.
+        foreach (var dotnet in new[] { true, false })
+        {
+            var unresolved = docs.Where(d => d.Unresolved > 0 && (languages.GetValueOrDefault(d.Project) is null or "C#") == dotnet)
+                .OrderByDescending(d => d.Unresolved).ToList();
+            var total = unresolved.Sum(d => d.Unresolved);
+            if (total == 0) continue;
             notes.Add(new CoverageNote("unresolved",
-                "Calls the compiler could not resolve, usually because a package is missing (try dotnet restore)",
+                dotnet ? "Calls the compiler could not resolve, usually because a package is missing (try dotnet restore)"
+                       : "Imports of packages that are not installed, so calls into them are not followed (try npm install)",
                 total, unresolved.Take(8).Select(d => new CoverageSite(null, d.File, 0)).ToList()));
+        }
         return notes;
     }
 }

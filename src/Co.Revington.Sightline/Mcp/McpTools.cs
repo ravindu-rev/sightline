@@ -11,8 +11,8 @@ namespace Co.Revington.Sightline.Mcp;
 internal sealed class McpTools(LiveSession session, PathScrubber paths)
 {
     static readonly HashSet<string> FlowKinds = ["handles", "calls", "dispatches", "db", "http"];
-    static readonly HashSet<string> CallerKinds = ["handles", "calls", "dispatches"];
-    static readonly HashSet<string> UseKinds = ["calls", "injects", "references", "inherits", "implements", "creates", "dispatches", "handles"];
+    static readonly HashSet<string> CallerKinds = ["handles", "calls", "dispatches", "http"];
+    static readonly HashSet<string> UseKinds = ["calls", "injects", "references", "inherits", "implements", "creates", "dispatches", "handles", "http"];
 
     static JsonObject Schema(params (string Name, string Type, string Description, bool Required)[] properties)
     {
@@ -37,19 +37,21 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
 
     public static JsonArray Definitions() =>
     [
-        Tool("solution_overview", "Solution overview",
-            "Projects with their kind, target framework and references; counts of types, endpoints and services; problems found; " +
+        Tool("solution_overview", "Overview of the code",
+            "Projects with their kind, target framework or language, and references; counts of types, endpoints and services; problems found; " +
             "and what the analysis could not follow. Call this first.", Schema()),
         Tool("find_symbol", "Find a class, method or endpoint",
             "Finds types, methods, properties, HTTP endpoints, projects and packages by name. Returns ids and file:line.",
             Schema(("query", "string", "Part of a name, such as OrderService, PlaceOrder or /api/orders.", true),
                 ("kind", "string", "Only this kind: type, member, endpoint, project or package.", false))),
         Tool("list_endpoints", "List HTTP endpoints",
-            "Every HTTP endpoint (controllers, minimal APIs, SignalR hubs, gRPC) with its route, handler and file:line.",
+            "Every HTTP endpoint (ASP.NET Core controllers and minimal APIs, SignalR hubs, gRPC; Express, Fastify, Koa, Hono, NestJS and Next.js routes) " +
+            "with its route, handler and file:line.",
             Schema(("filter", "string", "Only routes or handlers containing this text.", false))),
         Tool("trace_flow", "Trace a request or method",
             "Steps behind an endpoint or method in source order: handlers, calls, the class that implements each interface " +
-            "call (as registered in dependency injection), database access and outbound HTTP. With direction \"up\": who calls it.",
+            "call (as registered in dependency injection), database access and outbound HTTP, which continues in the endpoint it reaches when " +
+            "that endpoint is in the code, also in another language. With direction \"up\": who calls it, over HTTP too.",
             Schema(("target", "string", "An endpoint (\"POST /api/orders\"), a method (\"OrderService.Place\") or an id from find_symbol.", true),
                 ("direction", "string", "\"down\" (what it calls, default) or \"up\" (who calls it).", false),
                 ("depth", "integer", "How many steps deep, 1 to 12. Default 6.", false))),
@@ -58,7 +60,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
             "what it depends on and what uses it.",
             Schema(("name", "string", "The type name, such as OrderRepository, or an id from find_symbol.", true))),
         Tool("list_services", "List dependency injection registrations",
-            "Every registration found: service, implementation, lifetime and where it is registered.",
+            "Every registration found (.NET dependency injection, NestJS providers): service, implementation, lifetime and where it is registered.",
             Schema(("filter", "string", "Only services or implementations containing this text.", false))),
         Tool("list_problems", "List problems",
             "Problems in the dependency injection setup and the layer rules: singletons holding scoped services, services that " +
@@ -115,9 +117,9 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
         var g = q.Graph;
         var sb = new StringBuilder();
         int Count(string kind) => g.Nodes.Values.Count(n => n.Kind == kind);
-        sb.AppendLine($"Solution {session.Name} (folder {paths.Root})");
+        sb.AppendLine($"Map of {session.Name} (folder {paths.Root})");
         sb.AppendLine($"{Count("project")} projects, {Count("type")} types, {Count("member")} members, {Count("endpoint")} endpoints, " +
-                      $"{g.Services.Count} service registrations, {Count("package")} NuGet packages.");
+                      $"{g.Services.Count} service registrations, {Count("package")} packages.");
         sb.AppendLine();
         sb.AppendLine("Projects:");
         foreach (var p in g.Nodes.Values.Where(n => n.Kind == "project").OrderBy(n => n.Name))
@@ -125,7 +127,8 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
             var refs = q.Out(p.Id).Where(e => e.Kind == "projectRef").Select(e => q.Label(e.Target)).Order().ToList();
             var types = g.Nodes.Values.Count(n => n.Kind == "type" && n.Project == p.Id);
             var endpoints = g.Nodes.Values.Count(n => n.Kind == "endpoint" && n.Project == p.Id);
-            sb.AppendLine($"- {p.Name} ({p.Meta.GetValueOrDefault("projectKind")}, {p.Meta.GetValueOrDefault("tfm")}): {types} types" +
+            var about = string.Join(", ", new[] { p.Meta.GetValueOrDefault("projectKind"), p.Meta.GetValueOrDefault("tfm") ?? p.Meta.GetValueOrDefault("language") }.OfType<string>());
+            sb.AppendLine($"- {p.Name} ({about}): {types} types" +
                           (endpoints > 0 ? $", {endpoints} endpoints" : "") +
                           (refs.Count > 0 ? $"; references {string.Join(", ", refs)}" : ""));
         }
@@ -181,7 +184,8 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
             {
                 if (!q.Graph.Nodes.TryGetValue(e.Target, out var target)) continue;
                 var at = e.File is null ? "" : $"  ({paths.Relative(e.File)}:{e.Line})";
-                if (e.Kind is "db" or "http")
+                // A request to an endpoint on the map continues there; other requests and the database end the flow.
+                if (e.Kind == "db" || (e.Kind == "http" && target.Kind != "endpoint"))
                 {
                     var what = e.Kind == "db" ? "database " + target.Name : "outbound HTTP call";
                     sb.AppendLine($"{indent}- {what}{(e.Label is { } l ? ": " + l : "")}{at}");
@@ -189,7 +193,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
                 }
 
                 var impls = target.Kind == "member" && target.Meta.ContainsKey("abstract") ? q.Implementations(target.Id) : [];
-                var word = e.Kind switch { "dispatches" => "sends to", "handles" => "handled by", _ => "calls" };
+                var word = e.Kind switch { "dispatches" => "sends to", "handles" => "handled by", "http" => "calls over HTTP", _ => "calls" };
                 if (impls.Count > 0)
                 {
                     foreach (var impl in impls)
@@ -225,7 +229,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
 
         if (up) Up(root.Id, 0, "");
         else Down(root.Id, 0, "");
-        if (sb.ToString().Split('\n').Length <= 2) sb.AppendLine(up ? "Nothing in the solution calls it." : "It calls nothing that the analysis can follow.");
+        if (sb.ToString().Split('\n').Length <= 2) sb.AppendLine(up ? "Nothing in the code calls it." : "It calls nothing that the analysis can follow.");
         return sb.ToString().TrimEnd();
     }
 
@@ -322,6 +326,7 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
         sb.AppendLine($"What depends on {q.Label(root.Id)} ({Where(root)}):");
         var seen = new HashSet<string>(start) { Owner(root.Id) };
         var frontier = start.ToList();
+        var anyone = false;
         for (var level = 1; level <= depth && frontier.Count > 0; level++)
         {
             var next = new List<string>();
@@ -345,12 +350,13 @@ internal sealed class McpTools(LiveSession session, PathScrubber paths)
                 }
             }
             if (found.Count == 0) break;
+            anyone = true;
             sb.AppendLine(level == 1 ? "Directly:" : $"{level} steps away:");
             foreach (var (id, kinds) in found)
                 if (q.Graph.Nodes.TryGetValue(id, out var n)) sb.AppendLine($"- {q.Label(id)} ({string.Join(", ", kinds)})  {Where(n)}");
             frontier = next;
         }
-        if (seen.Count <= start.Length + 1) sb.AppendLine("Nothing in the solution uses it.");
+        if (!anyone) sb.AppendLine("Nothing in the code uses it.");
         return sb.ToString().TrimEnd();
     }
 }

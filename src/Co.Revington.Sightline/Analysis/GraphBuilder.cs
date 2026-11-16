@@ -38,7 +38,7 @@ internal static class GraphBuilder
 
         var endpoints = AddEndpoints(g, docs);
         var runtimeEndpoints = runtime is { Count: > 0 } ? RuntimeMerge.Endpoints(g, runtime, projects) : 0;
-        AddRefs(g, docs, endpoints, handlers, services, implementations);
+        AddRefs(g, docs, endpoints, handlers, services, implementations, new EndpointIndex(g));
         AddTypeLinks(g, docs);
         AddServices(g, docs);
         (g.Problems, g.Coverage) = Checks.Run(g, docs, projects, endpoints, checks ?? CheckOptions.None);
@@ -52,23 +52,28 @@ internal static class GraphBuilder
         return g;
     }
 
+    /// NuGet packages keep the ids they always had; others say where they come from, so an npm package and a
+    /// NuGet package with the same name stay two packages.
+    static string PackageId(PackageRef k) => k.Ecosystem == "nuget" ? "pkg:" + k.Name : $"pkg:{k.Ecosystem}:{k.Name}";
+
     static void AddProjects(Graph g, IReadOnlyList<ProjectFacts> projects)
     {
-        var packages = new SortedDictionary<string, (SortedSet<string> Versions, int UsedBy)>(StringComparer.OrdinalIgnoreCase);
+        var packages = new SortedDictionary<string, (string Name, string Ecosystem, SortedSet<string> Versions, int UsedBy)>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in projects)
         foreach (var k in p.Packages.Where(k => k.Direct))
         {
-            if (!packages.TryGetValue(k.Name, out var entry)) entry = ([], 0);
+            var id = PackageId(k);
+            if (!packages.TryGetValue(id, out var entry)) entry = (k.Name, k.Ecosystem, [], 0);
             if (k.Version.Length > 0) entry.Versions.Add(k.Version);
-            packages[k.Name] = (entry.Versions, entry.UsedBy + 1);
+            packages[id] = (entry.Name, entry.Ecosystem, entry.Versions, entry.UsedBy + 1);
         }
 
-        foreach (var (name, entry) in packages)
-            g.Add(new Node
-            {
-                Id = "pkg:" + name, Kind = "package", Name = name,
-                Meta = { ["versions"] = entry.Versions.ToList(), ["usedBy"] = entry.UsedBy },
-            });
+        foreach (var (id, entry) in packages)
+        {
+            var meta = new Dictionary<string, object> { ["versions"] = entry.Versions.ToList(), ["usedBy"] = entry.UsedBy };
+            if (entry.Ecosystem != "nuget") meta["ecosystem"] = entry.Ecosystem;
+            g.Add(new Node { Id = id, Kind = "package", Name = entry.Name, Meta = meta });
+        }
 
         foreach (var p in projects)
         {
@@ -79,6 +84,7 @@ internal static class GraphBuilder
                 ["transitive"] = p.Packages.Count(k => !k.Direct),
             };
             if (p.Tfm is not null) meta["tfm"] = p.Tfm;
+            if (!p.IsDotnet) meta["language"] = p.Language;
             g.Add(new Node { Id = p.Id, Kind = "project", Name = p.Name, File = p.Path, Meta = meta });
         }
 
@@ -86,7 +92,7 @@ internal static class GraphBuilder
         foreach (var p in projects)
         {
             foreach (var r in direct[p.Id]) g.Link("projectRef", p.Id, r);
-            foreach (var k in p.Packages.Where(k => k.Direct)) g.Link("packageRef", p.Id, "pkg:" + k.Name, k.Version);
+            foreach (var k in p.Packages.Where(k => k.Direct)) g.Link("packageRef", p.Id, PackageId(k), k.Version);
         }
     }
 
@@ -239,7 +245,7 @@ internal static class GraphBuilder
 
     static void AddRefs(Graph g, List<DocFacts> docs, Dictionary<string, List<string>> endpoints,
         Dictionary<string, List<string>> handlers, HashSet<string> services,
-        Dictionary<string, (string Lifetime, List<string> As)> implementations)
+        Dictionary<string, (string Lifetime, List<string> As)> implementations, EndpointIndex routes)
     {
         bool Injectable(string typeId)
         {
@@ -280,7 +286,9 @@ internal static class GraphBuilder
                         break;
 
                     case "http":
-                        g.Link("http", from, External(g, "ext:http", "HTTP (outbound)", "http"), r.Label, d.File, r.Line);
+                        // A request to an address that is one endpoint on the map goes there, whatever its language.
+                        var endpoint = r.Request is { } request && Routes.Request(request.Verb, request.Path) is { } call ? routes.Find(call) : null;
+                        g.Link("http", from, endpoint ?? External(g, "ext:http", "HTTP (outbound)", "http"), r.Label, d.File, r.Line);
                         break;
 
                     case "references":
@@ -302,6 +310,33 @@ internal static class GraphBuilder
         foreach (var d in docs)
         foreach (var i in d.Impls)
             if (g.Has(i.AbstractId) && g.Has(i.ImplId)) g.Link("impl", i.AbstractId, i.ImplId, i.Kind);
+    }
+
+    /// The endpoints on the map, for finding the one an HTTP request in the code reaches.
+    sealed class EndpointIndex(Graph g)
+    {
+        List<(string Id, string Verbs, string Route)>? _all;
+
+        /// The endpoint that fits best, or null when none fits or several fit equally well.
+        public string? Find(HttpCall call)
+        {
+            _all ??= g.Nodes.Values
+                .Where(n => n.Kind == "endpoint" && n.Meta.GetValueOrDefault("style") as string != "fallback")
+                .Select(n => (n.Id, n.Meta.GetValueOrDefault("verb") as string ?? "", n.Meta.GetValueOrDefault("route") as string ?? ""))
+                .ToList();
+
+            string? best = null;
+            var bestScore = 0;
+            var ties = 0;
+            foreach (var (id, verbs, route) in _all)
+            {
+                var score = Routes.Match(call, verbs, route);
+                if (score == 0 || score < bestScore) continue;
+                if (score > bestScore) (best, bestScore, ties) = (id, score, 0);
+                ties++;
+            }
+            return ties == 1 ? best : null;
+        }
     }
 
     static string External(Graph g, string id, string name, string type)

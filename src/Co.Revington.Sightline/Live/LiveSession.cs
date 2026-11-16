@@ -1,19 +1,17 @@
-using System.Collections.Concurrent;
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Co.Revington.Sightline.Analysis;
+using Co.Revington.Sightline.Languages;
 using Co.Revington.Sightline.Settings;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.MSBuild;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Co.Revington.Sightline.Live;
 
 internal abstract record Work;
-internal sealed record ReloadWork : Work;
+
+/// Only: the language to load again ("csharp", "typescript"), or null for all of them.
+internal sealed record ReloadWork(string? Only = null) : Work;
 internal sealed record FilesWork(IReadOnlyList<string> Paths) : Work;
 
 /// Editor text for a file. Text = null drops the unsaved buffer and goes back to disk.
@@ -27,51 +25,56 @@ internal sealed record StatusInfo(string State, string Message);
 /// Filter: projects to leave off the map. Restore: run "dotnet restore" for projects that were never restored.
 /// Checks: settings for the problems the map reports. Watch: follow file changes after loading (off for
 /// one-shot commands such as "sightline check"). Log: where progress goes (stdout by default).
-internal sealed record LoadOptions(ProjectFilter Filter, bool Restore, CheckOptions? Checks = null, bool Watch = true, TextWriter? Log = null)
+/// Languages: the languages to read ("csharp", "typescript"), or null for every one found under the target.
+/// PackagesFrom: for "diff", where a checkout without installed npm packages borrows them from.
+internal sealed record LoadOptions(
+    ProjectFilter Filter, bool Restore, CheckOptions? Checks = null, bool Watch = true, TextWriter? Log = null,
+    IReadOnlyList<string>? Languages = null, PackageMirror? PackagesFrom = null)
 {
     public static readonly LoadOptions Default = new(ProjectFilter.None, Restore: true);
 }
 
-/// Owns the loaded solution and keeps the graph in step with edits.
+/// Owns the code that is loaded, in every language, and keeps the graph in step with edits.
 /// All changes run on one loop, so state never needs fine-grained locking.
-internal sealed partial class LiveSession
+internal sealed class LiveSession : IDisposable
 {
-    static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", ".git", ".vs", ".idea", "node_modules" };
-
     readonly string _target;
     readonly EventHub _hub;
     readonly LoadOptions _options;
-    readonly HashSet<string> _restoreTried = new(StringComparer.OrdinalIgnoreCase);
-    readonly List<string> _restoreProblems = [];
     readonly Channel<Work> _queue = Channel.CreateUnbounded<Work>(new UnboundedChannelOptions { SingleReader = true });
     readonly object _gate = new();
     readonly Timer _reloadTimer;
-
-    MSBuildWorkspace? _workspace;
-    Solution? _solution;
-    List<ProjectFacts> _projects = [];
-    Dictionary<ProjectId, string> _projectNodeIds = [];
-    List<string> _diagnostics = [];
-    FileWatcher? _watcher;
-
-    readonly Dictionary<DocumentId, DocFacts> _facts = [];
-    readonly Dictionary<string, List<DocumentId>> _tracked = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _reloadDue = [];                    // languages to load again; "*" for all
+    readonly List<ILanguageWorkspace> _workspaces;
     readonly Dictionary<string, string> _overlays = new(StringComparer.OrdinalIgnoreCase);
-    readonly HashSet<ProjectId> _pendingSync = [];
+    readonly Dictionary<string, string> _unavailable = [];      // language -> why it is not on the map
+    readonly HashSet<string> _recovering = [];                    // languages loaded again after their reader failed
+
+    FileWatcher? _watcher;
     IReadOnlyList<RuntimeApp> _runtime = [];
+    bool _loaded;
 
     volatile Snapshot _snapshot = Snapshot.Empty;
     volatile StatusInfo _status = new("loading", "Starting");
 
     public LiveSession(string target, EventHub hub, LoadOptions? options = null)
+        : this(target, hub, options ?? LoadOptions.Default, LanguageSet.For(target, options?.Languages))
+    {
+    }
+
+    /// With the workspaces given, for tests.
+    internal LiveSession(string target, EventHub hub, LoadOptions options, List<ILanguageWorkspace> workspaces)
     {
         _target = target;
         _hub = hub;
-        _options = options ?? LoadOptions.Default;
+        _options = options;
         RootDir = Directory.Exists(target) ? target : Path.GetDirectoryName(target)!;
-        Name = Directory.Exists(target) ? new DirectoryInfo(target).Name : Path.GetFileName(target);
-        _reloadTimer = new Timer(_ => Enqueue(new ReloadWork()), null, Timeout.Infinite, Timeout.Infinite);
+        Name = Directory.Exists(target) || IsPackageManifest(target) ? new DirectoryInfo(RootDir).Name : Path.GetFileName(target);
+        _workspaces = workspaces;
+        _reloadTimer = new Timer(_ => ReloadDue(), null, Timeout.Infinite, Timeout.Infinite);
     }
+
+    static bool IsPackageManifest(string path) => Path.GetFileName(path).Equals("package.json", StringComparison.OrdinalIgnoreCase);
 
     public string RootDir { get; }
     public string Name { get; }
@@ -79,40 +82,39 @@ internal sealed partial class LiveSession
     public StatusInfo Status => _status;
     public string StatusJson => JsonSerializer.Serialize(_status, Snapshot.Json);
 
-    (int Version, string Status, string Json)? _graphJson;
+    sealed record GraphCache(int Version, string Status, string Json);
+
+    volatile GraphCache? _graphJson;
 
     /// The whole graph as the page fetches it. Built once per version: on a big solution it is tens of megabytes.
+    /// Requests come in on several threads, so the cache is one object, swapped whole.
     public string GraphJson()
     {
         var snapshot = _snapshot;
         var status = StatusJson;
         if (_graphJson is { } cached && cached.Version == snapshot.Version && cached.Status == status) return cached.Json;
         var json = snapshot.ToJson(status);
-        _graphJson = (snapshot.Version, status, json);
+        _graphJson = new GraphCache(snapshot.Version, status, json);
         return json;
     }
 
     public void Enqueue(Work work) => _queue.Writer.TryWrite(work);
 
-    public bool IsTracked(string path)
-    {
-        lock (_gate) return _tracked.ContainsKey(path);
-    }
+    /// The workspace whose map holds this file, if any. Any thread.
+    ILanguageWorkspace? Owner(string path) => _workspaces.FirstOrDefault(w => w.Tracks(path));
+
+    public bool IsTracked(string path) => Owner(path) is not null;
 
     public async Task<(string Text, bool Dirty)?> ReadSourceAsync(string path)
     {
-        Solution? solution;
-        DocumentId id;
-        bool dirty;
+        var owner = Owner(path);
+        if (owner is null) return null;
         lock (_gate)
         {
-            if (!_tracked.TryGetValue(path, out var ids)) return null;
-            (solution, id, dirty) = (_solution, ids[0], _overlays.ContainsKey(path));
+            if (_overlays.TryGetValue(path, out var unsaved)) return (unsaved, true);
         }
-
-        var doc = solution?.GetDocument(id);
-        if (doc is null) return null;
-        return ((await doc.GetTextAsync()).ToString(), dirty);
+        var text = await owner.ReadTextAsync(path, CancellationToken.None);
+        return text is null ? null : (text, false);
     }
 
     public async Task<bool> SaveAsync(string path, string text)
@@ -136,6 +138,17 @@ internal sealed partial class LiveSession
         }
     }
 
+    public void Dispose()
+    {
+        _reloadTimer.Dispose();
+        _watcher?.Dispose();
+        foreach (var w in _workspaces)
+        {
+            try { w.Dispose(); }
+            catch (Exception ex) { Console.Error.WriteLine($"  error   {ex.Message}"); }
+        }
+    }
+
     // ---------------------------------------------------------------- loop
 
     public async Task RunAsync(CancellationToken ct)
@@ -152,12 +165,12 @@ internal sealed partial class LiveSession
                     {
                         switch (work)
                         {
-                            case ReloadWork: await LoadAsync(ct); break;
+                            case ReloadWork r: await LoadAsync(r.Only, ct); break;
                             case FilesWork f: await ApplyFilesAsync(f.Paths, ct); break;
                             case OverlayWork o: await ApplyOverlayAsync(o, ct); break;
                             case RuntimeWork r:
                                 _runtime = r.Apps;
-                                if (_solution is not null) Publish("runtime", [], Stopwatch.StartNew());
+                                if (_loaded) Publish("runtime", [], Stopwatch.StartNew());
                                 break;
                         }
                     }
@@ -174,12 +187,7 @@ internal sealed partial class LiveSession
                 }
 
                 // Idle: refresh files whose meaning may have shifted after a declaration change.
-                if (_pendingSync.Count > 0)
-                {
-                    try { await SyncAsync(ct); }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-                    catch (Exception ex) { Console.Error.WriteLine($"  error   {ex.Message}"); _pendingSync.Clear(); }
-                }
+                if (await SyncAsync(ct)) return;
             }
         }
         catch (OperationCanceledException)
@@ -192,12 +200,16 @@ internal sealed partial class LiveSession
     {
         while (_queue.Reader.TryPeek(out var next))
         {
-            var skip = (work is ReloadWork && next is ReloadWork)
-                       || (work is RuntimeWork && next is RuntimeWork)
-                       || (work is OverlayWork { Saved: false } a && next is OverlayWork b && SamePath(a.Path, b.Path));
-            if (!skip) break;
+            Work? merged = (work, next) switch
+            {
+                (ReloadWork a, ReloadWork b) => new ReloadWork(a.Only == b.Only ? a.Only : null),
+                (RuntimeWork, RuntimeWork) => next,
+                (OverlayWork { Saved: false } a, OverlayWork b) when SamePath(a.Path, b.Path) => next,
+                _ => null,
+            };
+            if (merged is null) break;
             _queue.Reader.TryRead(out _);
-            work = next;
+            work = merged;
         }
         return work;
     }
@@ -211,314 +223,139 @@ internal sealed partial class LiveSession
         _hub.Publish("status", StatusJson);
     }
 
+    /// A project file changed: load that language again once the changes settle.
+    void ScheduleReload(string? language)
+    {
+        lock (_reloadDue) _reloadDue.Add(language ?? "*");
+        _reloadTimer.Change(700, Timeout.Infinite);
+    }
+
+    void ReloadDue()
+    {
+        string? only;
+        lock (_reloadDue)
+        {
+            if (_reloadDue.Count == 0) return;
+            only = _reloadDue.Count == 1 && !_reloadDue.Contains("*") ? _reloadDue.First() : null;
+            _reloadDue.Clear();
+        }
+        Enqueue(new ReloadWork(only));
+    }
+
     // ---------------------------------------------------------------- load
 
-    sealed class DirectProgress(Action<ProjectLoadProgress> report) : IProgress<ProjectLoadProgress>
-    {
-        public void Report(ProjectLoadProgress value) => report(value);
-    }
-
-    async Task LoadAsync(CancellationToken ct)
+    async Task LoadAsync(string? only, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        if (_options.Restore) await RestoreMissingAsync(ct);
-        SetStatus("loading", "Opening " + Name);
+        var context = new LoadContext(_target, RootDir, Name, _options.Filter, _options.Restore,
+            message => SetStatus("loading", message), _options.PackagesFrom);
 
-        var ws = MSBuildWorkspace.Create();
-        var kept = false;
-        try
+        foreach (var w in _workspaces)
         {
-            kept = await LoadIntoAsync(ws, sw, ct);
-        }
-        finally
-        {
-            // A load that failed or was cancelled must not leave its MSBuild build host running.
-            if (!kept) ws.Dispose();
-        }
-    }
-
-    /// Opens the solution in the workspace and builds the graph. True when the workspace is kept.
-    async Task<bool> LoadIntoAsync(MSBuildWorkspace ws, Stopwatch sw, CancellationToken ct)
-    {
-        ws.SkipUnrecognizedProjects = true;
-        var progress = new DirectProgress(p => SetStatus("loading", $"{p.Operation} {Path.GetFileName(p.FilePath)}"));
-        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        Solution solution;
-        if (Directory.Exists(_target))
-        {
-            foreach (var csproj in FindProjects(_target).Order())
+            if (only is not null && w.Language != only) continue;
+            try
             {
-                if (_options.Filter.Excludes(csproj)) excluded.Add(csproj);
-                else if (!ws.CurrentSolution.Projects.Any(p => SamePath(p.FilePath ?? "", csproj)))
-                    await ws.OpenProjectAsync(csproj, progress, ct);
+                await w.LoadAsync(context, ct);
+                _unavailable.Remove(w.Language);
+                _recovering.Remove(w.Language);
             }
-            solution = ws.CurrentSolution;
-        }
-        else if (IsSolution(_target))
-        {
-            solution = await ws.OpenSolutionAsync(_target, progress, ct);
-        }
-        else
-        {
-            solution = (await ws.OpenProjectAsync(_target, progress, ct)).Solution;
-        }
-
-        // Projects listed in "exclude" still load when others reference them (their types are needed
-        // to understand the code that uses them), but they stay off the map.
-        var csharp = solution.Projects.Where(p => p.Language == LanguageNames.CSharp && p.FilePath is not null).ToList();
-        foreach (var p in csharp)
-            if (_options.Filter.Excludes(p.FilePath!)) excluded.Add(p.FilePath!);
-
-        // One project per csproj: multi-targeted projects load once per framework.
-        var chosen = csharp
-            .Where(p => !excluded.Contains(p.FilePath!))
-            .GroupBy(p => p.FilePath!, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .OrderBy(p => p.FilePath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);       // csproj path -> display name
-        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in chosen)
-        {
-            var name = Path.GetFileNameWithoutExtension(p.FilePath!);
-            for (var i = 2; !used.Add(name); i++) name = $"{Path.GetFileNameWithoutExtension(p.FilePath!)} ({i})";
-            names[p.FilePath!] = name;
-        }
-        var nodeIdByPath = names.ToDictionary(kv => kv.Key, kv => "proj:" + kv.Value, StringComparer.OrdinalIgnoreCase);
-
-        var projects = chosen.Select(p => ProjectReader.Read(p, nodeIdByPath[p.FilePath!], names[p.FilePath!], nodeIdByPath)).ToList();
-        var projectNodeIds = chosen.ToDictionary(p => p.Id, p => nodeIdByPath[p.FilePath!]);
-
-        var docs = chosen.SelectMany(p => p.Documents.Where(IsUserDocument)).ToList();
-        var results = new ConcurrentBag<(Document Doc, DocFacts Facts)>();
-        var done = 0;
-
-        await Parallel.ForEachAsync(docs, Parallelism(ct), async (doc, c) =>
-        {
-            results.Add((doc, await Extractor.ExtractAsync(doc, projectNodeIds[doc.Project.Id], c)));
-            var n = Interlocked.Increment(ref done);
-            if (n % 20 == 0) SetStatus("loading", $"Analyzing {n}/{docs.Count} files");
-        });
-
-        lock (_gate)
-        {
-            _workspace?.Dispose();
-            _workspace = ws;
-            _solution = solution;
-            _projects = projects;
-            _projectNodeIds = projectNodeIds;
-            var all = _restoreProblems.Concat(ws.Diagnostics.Select(Describe)).Distinct().ToList();
-            _diagnostics = all.Count <= 200 ? all : [.. all.Take(200), $"And {all.Count - 200} more."];
-
-            _facts.Clear();
-            _tracked.Clear();
-            foreach (var (doc, facts) in results)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _facts[doc.Id] = facts;
-                if (!_tracked.TryGetValue(doc.FilePath!, out var ids)) _tracked[doc.FilePath!] = ids = [];
-                ids.Add(doc.Id);
+                throw;
+            }
+            catch (Exception ex) when (CanGoOnWithout(w, ex))
+            {
+                var message = ex is LanguageUnavailableException ? ex.Message : $"{LanguageSet.Title(w.Language)} could not be read: {ex.Message}";
+                if (!_unavailable.TryGetValue(w.Language, out var before) || before != message)
+                    (_options.Log ?? Console.Out).WriteLine($"  warning {message}");
+                _unavailable[w.Language] = message;
             }
         }
-        _pendingSync.Clear();
 
         // Unsaved editor buffers survive a reload.
-        foreach (var (path, text) in _overlays.ToList())
-            if (await SetTextAsync(path, SourceText.From(text, Encoding.UTF8), ct))
-                await ReextractAsync(TrackedIds(path), ct);
+        foreach (var (path, text) in Overlays())
+        {
+            if (Owner(path) is not { } owner || (only is not null && owner.Language != only)) continue;
+            try
+            {
+                await owner.ApplyAsync([new FileChange(path, text)], ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                Recover(owner, ex);
+            }
+        }
 
-        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
+        var graph = Build();
         _snapshot = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
+        _loaded = true;
         _hub.Publish("reload", $"{{\"version\":{_snapshot.Version}}}");
 
         var count = (string kind) => graph.Nodes.Values.Count(n => n.Kind == kind);
-        var left = excluded.Count == 0 ? "" : $", {excluded.Count} left out by {SightlineConfig.FileName}";
+        var excluded = _workspaces.Sum(w => w.Excluded);
+        var left = excluded == 0 ? "" : $", {excluded} left out by {SightlineConfig.FileName}";
         SetStatus("ready", $"{count("project")} projects, {count("type")} types, {count("endpoint")} endpoints in {sw.Elapsed.TotalSeconds:0.0}s{left}");
 
-        if (_options.Watch) _watcher ??= new FileWatcher(WatchRoots(), paths => Enqueue(new FilesWork(paths)));
-        return true;
+        if (_options.Watch)
+            _watcher ??= new FileWatcher(WatchRoots(), Accepts, () => _workspaces.Any(w => w is not CSharpWorkspace && w.Projects.Count > 0),
+                paths => Enqueue(new FilesWork(paths)));
     }
 
-    static bool IsSolution(string path) =>
-        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase);
-
-    /// MSBuild's messages, shorter: which project, and what is wrong. Package advisories are warnings, not failures.
-    static string Describe(WorkspaceDiagnostic d)
+    /// Whether the map can show the rest when one language fails to load. C# never: a solution that does
+    /// not open is an error, as it always was. Another language can be left out when something else is on
+    /// the map: always when the machine lacks what it needs (Node.js), and otherwise only on the live map,
+    /// because a one-shot command such as "check" must not pass while part of the code went unread.
+    bool CanGoOnWithout(ILanguageWorkspace failed, Exception ex)
     {
-        var m = MsbuildFailure().Match(d.Message);
-        var text = m.Success ? $"{Path.GetFileNameWithoutExtension(m.Groups["file"].Value)}: {m.Groups["message"].Value.Trim()}" : d.Message;
-        var advisory = text.Contains("known", StringComparison.OrdinalIgnoreCase) && text.Contains("vulnerability", StringComparison.OrdinalIgnoreCase);
-        return (d.Kind == WorkspaceDiagnosticKind.Failure && !advisory ? "Error: " : "Warning: ") + text;
+        if (failed is CSharpWorkspace) return false;
+        if (!_workspaces.Any(w => w != failed && w.Projects.Count > 0)) return false;
+        return ex is LanguageUnavailableException || _options.Watch;
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"^Msbuild failed when processing the file '(?<file>[^']+)' with message: (?<message>.+)$", System.Text.RegularExpressions.RegexOptions.Singleline)]
-    private static partial System.Text.RegularExpressions.Regex MsbuildFailure();
+    /// One language failed while following an edit, for example because its reader process stopped. The others
+    /// go on; that language is loaded again, once: if that fails too, it says so and waits for the next reload.
+    void Recover(ILanguageWorkspace w, Exception ex)
+    {
+        Console.Error.WriteLine($"  error   {ex.Message}");
+        if (w is not CSharpWorkspace && _recovering.Add(w.Language)) ScheduleReload(w.Language);
+    }
 
-    /// Loads the solution once, without following changes. For one-shot commands (check, export, diff).
+    List<KeyValuePair<string, string>> Overlays()
+    {
+        lock (_gate) return [.. _overlays];
+    }
+
+    /// Loads once, without following changes. For one-shot commands (check, export, diff).
     public async Task<Snapshot> LoadOnceAsync(CancellationToken ct)
     {
-        await LoadAsync(ct);
+        await LoadAsync(null, ct);
         if (_status.State != "ready") throw new InvalidOperationException(_status.Message);
         return _snapshot;
     }
 
-    static ParallelOptions Parallelism(CancellationToken ct) => new()
-    {
-        MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount - 1),
-        CancellationToken = ct,
-    };
+    Graph Build() =>
+        GraphBuilder.Build(_workspaces.SelectMany(w => w.Projects).ToList(), _workspaces.SelectMany(w => w.Facts), _options.Checks, _runtime);
 
-    /// Project files under a folder, without walking into build output or tool folders.
-    internal static IEnumerable<string> FindProjects(string root)
-    {
-        var pending = new Stack<string>([root]);
-        while (pending.TryPop(out var dir))
-        {
-            string[] files, dirs;
-            try
-            {
-                files = Directory.GetFiles(dir, "*.csproj");
-                dirs = Directory.GetDirectories(dir);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-            {
-                continue;
-            }
-            foreach (var file in files) yield return file;
-            foreach (var sub in dirs)
-                if (!SkipDirs.Contains(Path.GetFileName(sub))) pending.Push(sub);
-        }
-    }
-
-    /// The analysis needs each project's NuGet packages, which exist only after a restore.
-    /// Like "dotnet build", restore the projects that never were, so a fresh clone just works.
-    async Task RestoreMissingAsync(CancellationToken ct)
-    {
-        // Only the projects the solution lists: other project files in the folder (samples, fuzzers) are not loaded anyway.
-        var candidates = (Directory.Exists(_target) ? null : SolutionProjects(_target)) ?? [.. FindProjects(RootDir)];
-        var missing = candidates
-            .Where(p => !_options.Filter.Excludes(p) && !_restoreTried.Contains(p) && File.Exists(p) && !IsRestored(p))
-            .ToList();
-        if (missing.Count == 0) return;
-
-        // Each project is tried once per run: a feed that needs a login should not slow down every reload.
-        foreach (var p in missing) _restoreTried.Add(p);
-        SetStatus("loading", $"Restoring NuGet packages for {missing.Count} project{(missing.Count == 1 ? "" : "s")}");
-
-        // A solution or a single project restores in one go. When that fails, the projects still missing
-        // are restored one by one, so a single project that cannot be restored (it needs a workload or an
-        // SDK that is not installed) does not keep all the others from loading properly.
-        var together = !Directory.Exists(_target) && await RestoreAsync(_target, ct);
-        if (!together)
-            foreach (var project in missing.Where(p => !IsRestored(p)))
-                await RestoreAsync(project, ct);
-    }
-
-    /// True when restored. A failure is kept as a load warning.
-    async Task<bool> RestoreAsync(string target, CancellationToken ct)
-    {
-        // No lingering MSBuild worker processes after the restore.
-        var result = await DotnetCli.RunAsync(RootDir, ["restore", target, "-nodeReuse:false"], ct);
-        if (result.Code == 0) return true;
-        _restoreProblems.Add($"Warning: \"dotnet restore {Path.GetFileName(target)}\" failed, so some references may be missing. {DotnetCli.Tail(result.All, 2)}");
-        return false;
-    }
-
-    /// The restore output exists: obj/project.assets.json, or the same under artifacts/obj/<project>
-    /// for repositories that use MSBuild's artifacts output layout.
-    static bool IsRestored(string project)
-    {
-        var dir = Path.GetDirectoryName(project)!;
-        if (File.Exists(Path.Combine(dir, "obj", "project.assets.json"))) return true;
-
-        var name = Path.GetFileNameWithoutExtension(project);
-        for (var up = new DirectoryInfo(dir); up is not null; up = up.Parent)
-        {
-            if (File.Exists(Path.Combine(up.FullName, "artifacts", "obj", name, "project.assets.json"))) return true;
-            if (Directory.Exists(Path.Combine(up.FullName, ".git"))) break;
-        }
-        return false;
-    }
-
-    /// The C# projects a .sln, .slnx or .slnf lists, or null when the file cannot be read.
-    internal static List<string>? SolutionProjects(string solution)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(Path.GetFullPath(solution))!;
-            IEnumerable<string> paths;
-            if (solution.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
-            {
-                paths = System.Xml.Linq.XDocument.Load(solution).Descendants()
-                    .Where(e => e.Name.LocalName == "Project")
-                    .Select(e => e.Attribute("Path")?.Value)
-                    .OfType<string>();
-            }
-            else if (solution.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase))
-            {
-                using var doc = JsonDocument.Parse(File.ReadAllText(solution), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-                var inner = doc.RootElement.GetProperty("solution");
-                dir = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(dir, inner.GetProperty("path").GetString()!)))!;
-                paths = inner.GetProperty("projects").EnumerateArray().Select(p => p.GetString()).OfType<string>().ToList();
-            }
-            else if (solution.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
-            {
-                paths = File.ReadLines(solution)
-                    .Select(line => SlnProject().Match(line))
-                    .Where(m => m.Success)
-                    .Select(m => m.Groups[1].Value);
-            }
-            else
-            {
-                return [Path.GetFullPath(solution)];
-            }
-
-            return paths
-                .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-                .Select(p => Path.GetFullPath(Path.Combine(dir, p.Replace('\\', Path.DirectorySeparatorChar))))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or System.Xml.XmlException or KeyNotFoundException or InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    /// Project("{...}") = "Name", "src\Name\Name.csproj", "{...}"
-    [System.Text.RegularExpressions.GeneratedRegex(@"^Project\(""[^""]*""\)\s*=\s*""[^""]*"",\s*""([^""]+)""")]
-    private static partial System.Text.RegularExpressions.Regex SlnProject();
-
-    static bool InBuildOutput(string path) =>
-        path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
-        || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
-
-    static bool IsUserDocument(Document d) =>
-        d.FilePath is { } path && d.SourceCodeKind == SourceCodeKind.Regular && !InBuildOutput(path) && !FromPackage(path)
-        && !path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
-
-    /// Source files that NuGet packages add to a project are not the project's own code.
-    /// That includes the starter that Co.Revington.Sightline.Hosting compiles into an app.
-    static bool FromPackage(string path)
-    {
-        var sep = Path.DirectorySeparatorChar;
-        return path.Contains($"{sep}.nuget{sep}packages{sep}", StringComparison.OrdinalIgnoreCase)
-            || path.Contains($"{sep}co.revington.sightline.hosting{sep}", StringComparison.OrdinalIgnoreCase);
-    }
+    bool Accepts(string path) => _workspaces.Any(w => w.RoleOf(path) != FileRole.None);
 
     List<string> WatchRoots()
     {
+        static bool Within(string dir, string root) =>
+            string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+            || dir.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+
         var roots = new List<string> { RootDir };
-        foreach (var p in _projects)
-            if (!roots.Any(r => p.Dir.StartsWith(r, StringComparison.OrdinalIgnoreCase))) roots.Add(p.Dir);
+        foreach (var dir in _workspaces.SelectMany(w => w.WatchRoots))
+            if (!roots.Any(r => Within(dir, r))) roots.Add(dir);
         return roots;
     }
 
     object Info(Graph g)
     {
         int Count(string kind) => g.Nodes.Values.Count(n => n.Kind == kind);
+        var diagnostics = _workspaces.SelectMany(w => w.Diagnostics)
+            .Concat(_workspaces.Where(w => _unavailable.ContainsKey(w.Language)).Select(w => "Warning: " + _unavailable[w.Language]))
+            .ToList();
         return new
         {
             name = Name,
@@ -530,7 +367,8 @@ internal sealed partial class LiveSession
                 projects = Count("project"), packages = Count("package"), types = Count("type"),
                 members = Count("member"), endpoints = Count("endpoint"), services = g.Services.Count,
             },
-            diagnostics = _diagnostics,
+            diagnostics,
+            languages = _workspaces.SelectMany(w => w.Projects).Select(p => p.Language).Distinct().ToList(),
         };
     }
 
@@ -538,201 +376,115 @@ internal sealed partial class LiveSession
 
     async Task ApplyFilesAsync(IReadOnlyList<string> paths, CancellationToken ct)
     {
-        if (_solution is null) return;
+        if (!_loaded) return;
         var sw = Stopwatch.StartNew();
-        var touched = new List<DocumentId>();
-        var files = new List<string>();
-        var reload = false;
+        var changes = new Dictionary<ILanguageWorkspace, List<FileChange>>();
+        var reload = new HashSet<string>();
+        var everything = false;
 
         foreach (var raw in paths)
         {
-            if (raw == FileWatcher.Rescan || !raw.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            if (raw == FileWatcher.Rescan)
             {
-                reload = true;
+                everything = true;
                 continue;
             }
 
             var path = Path.GetFullPath(raw);
-            if (_overlays.ContainsKey(path)) continue;          // the editor buffer wins until saved or reverted
-
-            var ids = _solution.GetDocumentIdsWithFilePath(path);
-            var exists = File.Exists(path);
-
-            if (exists && !ids.IsEmpty)
+            foreach (var w in _workspaces)
             {
-                var text = await ReadTextAsync(path, ct);
-                if (text is null || !await SetTextAsync(path, text, ct)) continue;
-                touched.AddRange(TrackedIds(path));
-                files.Add(path);
-            }
-            else if (exists)
-            {
-                var text = await ReadTextAsync(path, ct);
-                if (text is null) continue;
-                var added = AddDocument(path, text);
-                if (added.Count == 0) continue;
-                touched.AddRange(added);
-                files.Add(path);
-            }
-            else if (!ids.IsEmpty)
-            {
-                RemoveDocument(path, ids);
-                files.Add(path);
+                switch (w.RoleOf(path))
+                {
+                    case FileRole.Project:
+                        reload.Add(w.Language);
+                        break;
+                    case FileRole.Source:
+                        bool unsaved;
+                        lock (_gate) unsaved = _overlays.ContainsKey(path);
+                        if (unsaved) break;                     // the editor buffer wins until saved or reverted
+                        if (!changes.TryGetValue(w, out var list)) changes[w] = list = [];
+                        list.Add(new FileChange(path, null));
+                        break;
+                }
             }
         }
 
-        if (files.Count > 0)
+        var files = new List<string>();
+        foreach (var (w, list) in changes)
         {
-            await ReextractAsync(touched, ct);
-            Publish("disk", files, sw);
+            try
+            {
+                files.AddRange(await w.ApplyAsync(list, ct));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                Recover(w, ex);
+            }
         }
-        if (reload) _reloadTimer.Change(700, Timeout.Infinite);
+        if (files.Count > 0) Publish("disk", files.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), sw);
+
+        if (everything) ScheduleReload(null);
+        else foreach (var language in reload) ScheduleReload(language);
     }
 
     async Task ApplyOverlayAsync(OverlayWork o, CancellationToken ct)
     {
-        if (_solution is null || _solution.GetDocumentIdsWithFilePath(o.Path).IsEmpty) return;
+        var owner = Owner(o.Path);
+        if (owner is null) return;
         var sw = Stopwatch.StartNew();
-
-        SourceText? text;
-        if (o.Text is null)
-        {
-            lock (_gate) _overlays.Remove(o.Path);
-            text = await ReadTextAsync(o.Path, ct);
-            if (text is null) return;
-        }
-        else
-        {
-            lock (_gate)
-            {
-                if (o.Saved) _overlays.Remove(o.Path);
-                else _overlays[o.Path] = o.Text;
-            }
-            text = SourceText.From(o.Text, Encoding.UTF8);
-        }
-
-        if (!await SetTextAsync(o.Path, text, ct)) return;
-        await ReextractAsync(TrackedIds(o.Path), ct);
-        Publish(o.Saved ? "save" : "edit", [o.Path], sw);
-    }
-
-    List<DocumentId> TrackedIds(string path) => _tracked.TryGetValue(path, out var ids) ? [.. ids] : [];
-
-    /// Replaces a file's text in every project that contains it. False when the text is unchanged.
-    async Task<bool> SetTextAsync(string path, SourceText text, CancellationToken ct)
-    {
-        var solution = _solution!;
-        var ids = solution.GetDocumentIdsWithFilePath(path);
-        if (ids.IsEmpty) return false;
-
-        var current = await solution.GetDocument(ids[0])!.GetTextAsync(ct);
-        if (current.ContentEquals(text)) return false;
-
-        foreach (var id in ids) solution = solution.WithDocumentText(id, text);
-        lock (_gate) _solution = solution;
-        return true;
-    }
-
-    List<DocumentId> AddDocument(string path, SourceText text)
-    {
-        var solution = _solution!;
-
-        // The deepest project folder that contains the file owns it (SDK-style globbing).
-        var owners = solution.Projects
-            .Where(p => p.Language == LanguageNames.CSharp && p.FilePath is not null)
-            .Select(p => (Project: p, Dir: Path.GetDirectoryName(p.FilePath!)! + Path.DirectorySeparatorChar))
-            .Where(x => path.StartsWith(x.Dir, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(x => x.Dir.Length)
-            .ToList();
-        if (owners.Count == 0) return [];
-
-        var added = new List<DocumentId>();
-        lock (_gate)
-        {
-            foreach (var (project, _) in owners.Where(x => x.Dir.Length == owners[0].Dir.Length))
-            {
-                var id = DocumentId.CreateNewId(project.Id);
-                solution = solution.AddDocument(id, Path.GetFileName(path), text, filePath: path);
-                if (!_projectNodeIds.ContainsKey(project.Id)) continue;
-
-                if (!_tracked.TryGetValue(path, out var ids)) _tracked[path] = ids = [];
-                ids.Add(id);
-                added.Add(id);
-            }
-            _solution = solution;
-        }
-        foreach (var id in added) MarkForSync(id.ProjectId);
-        return added;
-    }
-
-    void RemoveDocument(string path, ImmutableArray<DocumentId> ids)
-    {
-        var solution = _solution!;
-        foreach (var id in ids) solution = solution.RemoveDocument(id);
 
         lock (_gate)
         {
-            _solution = solution;
-            if (_tracked.Remove(path, out var tracked))
-                foreach (var id in tracked) _facts.Remove(id);
+            if (o.Text is null || o.Saved) _overlays.Remove(o.Path);
+            else _overlays[o.Path] = o.Text;
         }
-        foreach (var id in ids) MarkForSync(id.ProjectId);
-    }
 
-    async Task ReextractAsync(IEnumerable<DocumentId> ids, CancellationToken ct)
-    {
-        foreach (var id in ids.Distinct())
-        {
-            var doc = _solution!.GetDocument(id);
-            if (doc is null || !_projectNodeIds.TryGetValue(id.ProjectId, out var nodeId)) continue;
-
-            var facts = await Extractor.ExtractAsync(doc, nodeId, ct);
-            if (!_facts.TryGetValue(id, out var old) || old.DeclHash != facts.DeclHash) MarkForSync(id.ProjectId);
-            _facts[id] = facts;
-        }
-    }
-
-    /// A declaration changed: other files in this project and its dependents may now bind differently.
-    void MarkForSync(ProjectId project)
-    {
-        if (!_projectNodeIds.ContainsKey(project)) return;
-        _pendingSync.Add(project);
-        foreach (var dependent in _solution!.GetProjectDependencyGraph().GetProjectsThatTransitivelyDependOnThisProject(project))
-            if (_projectNodeIds.ContainsKey(dependent)) _pendingSync.Add(dependent);
-    }
-
-    async Task SyncAsync(CancellationToken ct)
-    {
-        var sw = Stopwatch.StartNew();
-        var solution = _solution!;
-        var ids = _facts.Keys.Where(id => _pendingSync.Contains(id.ProjectId)).ToList();
-        var results = new ConcurrentBag<(DocumentId Id, DocFacts Facts)>();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
+        IReadOnlyList<string> changed;
         try
         {
-            await Parallel.ForEachAsync(ids, Parallelism(cts.Token), async (id, c) =>
-            {
-                // A new edit is waiting: handle it first. (TryPeek, because this channel cannot count.)
-                if (_queue.Reader.TryPeek(out _)) cts.Cancel();
-                c.ThrowIfCancellationRequested();
-                if (solution.GetDocument(id) is { } doc)
-                    results.Add((id, await Extractor.ExtractAsync(doc, _projectNodeIds[id.ProjectId], c)));
-            });
+            changed = await owner.ApplyAsync([new FileChange(o.Path, o.Text)], ct);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            return;                                                  // keep the sync pending and retry when idle
+            Recover(owner, ex);
+            return;
         }
+        if (changed.Count > 0) Publish(o.Saved ? "save" : "edit", [o.Path], sw);
+    }
 
-        _pendingSync.Clear();
-        foreach (var (id, facts) in results) _facts[id] = facts;
-        Publish("sync", [], sw);
+    /// Reads again what a declaration change may have shifted, language by language, stopping as soon as
+    /// new work arrives. True when the session is shutting down.
+    async Task<bool> SyncAsync(CancellationToken ct)
+    {
+        var pending = _workspaces.Where(w => w.SyncPending).ToList();
+        if (pending.Count == 0) return false;
+
+        var sw = Stopwatch.StartNew();
+        var done = false;
+        foreach (var w in pending)
+        {
+            try
+            {
+                if (!await w.SyncAsync(() => _queue.Reader.TryPeek(out _), ct)) break;
+                done = true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return true;
+            }
+            catch (Exception ex)
+            {
+                w.DropSync();
+                Recover(w, ex);
+            }
+        }
+        if (done) Publish("sync", [], sw);
+        return false;
     }
 
     void Publish(string reason, IReadOnlyList<string> files, Stopwatch sw)
     {
-        var graph = GraphBuilder.Build(_projects, _facts.Values, _options.Checks, _runtime);
+        var graph = Build();
         var next = Snapshot.From(graph, _snapshot.Version + 1, Info(graph));
         var relative = files.Select(f => Path.GetRelativePath(RootDir, f).Replace('\\', '/'));
         var patch = Snapshot.Diff(_snapshot, next, reason, relative, sw.ElapsedMilliseconds);
@@ -740,23 +492,5 @@ internal sealed partial class LiveSession
 
         _snapshot = next;
         _hub.Publish("patch", patch);
-    }
-
-    static async Task<SourceText?> ReadTextAsync(string path, CancellationToken ct)
-    {
-        // Editors may hold the file briefly while saving; retry a few times.
-        for (var attempt = 0; attempt < 6; attempt++)
-        {
-            try
-            {
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                return SourceText.From(stream);
-            }
-            catch (FileNotFoundException) { return null; }
-            catch (DirectoryNotFoundException) { return null; }
-            catch (IOException) { await Task.Delay(40, ct); }
-            catch (UnauthorizedAccessException) { await Task.Delay(40, ct); }
-        }
-        return null;
     }
 }

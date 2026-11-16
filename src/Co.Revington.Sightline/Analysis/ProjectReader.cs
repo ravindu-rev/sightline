@@ -4,31 +4,7 @@ using Microsoft.CodeAnalysis;
 
 namespace Co.Revington.Sightline.Analysis;
 
-internal sealed record PackageRef(string Name, string Version, bool Direct);
-
-internal sealed class ProjectFacts
-{
-    public required string Id { get; init; }          // graph node id: "proj:Name"
-    public required string Name { get; init; }
-    public string AssemblyName { get; init; } = "";
-    public required string Path { get; init; }
-    public required string Dir { get; init; }
-    public required string Kind { get; init; }        // web | worker | exe | test | lib
-    public string? Tfm { get; init; }
-    public required ProjectId RoslynId { get; init; }
-
-    /// Every project the compiler sees, also those reached through other projects.
-    public List<string> ProjectRefs { get; init; } = [];
-
-    /// The ProjectReference items written in the project file itself.
-    public List<string> WrittenRefs { get; init; } = [];
-
-    /// Type names that the project's Razor files ask for with "@inject Type name", without namespace or generics.
-    public HashSet<string> RazorInjects { get; init; } = [];
-    public List<PackageRef> Packages { get; init; } = [];
-}
-
-/// Project-level facts: kind, target framework, project and package references.
+/// Project-level facts of a .NET project: kind, target framework, project and package references.
 internal static partial class ProjectReader
 {
     static readonly HashSet<string> TestPackages = new(StringComparer.OrdinalIgnoreCase)
@@ -80,7 +56,7 @@ internal static partial class ProjectReader
         return new ProjectFacts
         {
             Id = nodeId, Name = name, AssemblyName = project.AssemblyName, Path = path, Dir = dir, Kind = kind, Tfm = tfm,
-            RoslynId = project.Id, ProjectRefs = refs, WrittenRefs = written, Packages = packages,
+            ProjectRefs = refs, WrittenRefs = written, Packages = packages,
             RazorInjects = RazorInjectsIn(dir),
         };
     }

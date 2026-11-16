@@ -1,0 +1,5 @@
+{
+  "$schema": "https://sightline.revington.co/sightline.schema.json",
+  "solution": "Co.Revington.Sightline.sln",
+  "exclude": ["samples"]
+}

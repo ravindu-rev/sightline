@@ -21,8 +21,8 @@
     <PackageType>DotnetTool;McpServer</PackageType>
     <PackageId>Co.Revington.Sightline</PackageId>
     <Title>Sightline</Title>
-    <Description>A live, editable map of a .NET solution. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
-    <PackageTags>dotnet-tool;roslyn;architecture;dependency-graph;dependency-injection;aspnetcore;endpoints;code-map;visualization</PackageTags>
+    <Description>A live, editable map of your code in C#, TypeScript and JavaScript, also across languages. See projects, packages, types, dependency injection, HTTP endpoints and the flow behind each request in one page that updates while you edit.</Description>
+    <PackageTags>dotnet-tool;roslyn;csharp;typescript;javascript;architecture;dependency-graph;dependency-injection;aspnetcore;nestjs;express;endpoints;code-map;visualization</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
@@ -36,6 +36,11 @@
     <None Remove="wwwroot\**" />
     <!-- UI files ship next to the tool binary. Pack=false avoids extra "content" copies in the package. -->
     <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" Pack="false" />
+
+    <!-- Readers for languages other than C#, which run in a process of their own: plain JavaScript for
+         Node.js, and the TypeScript compiler they read JavaScript and TypeScript with. Shipped the same way. -->
+    <None Remove="analyzers\**" />
+    <Content Include="analyzers\**" CopyToOutputDirectory="PreserveNewest" Pack="false" />
 
     <!-- Shown on nuget.org -->
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />

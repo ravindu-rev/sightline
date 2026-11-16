@@ -2,7 +2,7 @@
 // Typing in the editor sends the unsaved text to the server, so the map updates before saving.
 // Markup is built from strings; every value from the analyzed code goes through esc().
 
-import { esc, icon, typeCode, verbChip, tagLabel, fileName, plural, remember, toast } from './ui.js';
+import { esc, icon, typeCode, verbChip, tagLabel, fileName, plural, remember, toast, languageOf, packageWord } from './ui.js';
 import { api } from './api.js';
 import { KIND_GROUP, describeKinds } from './models.js';
 
@@ -15,7 +15,9 @@ const RULE_WORDS = {
 
 const STYLE_WORDS = {
   minimal: 'Minimal API endpoint', controller: 'Controller action', hub: 'SignalR hub',
-  grpc: 'gRPC service', health: 'Health check', fallback: 'Fallback route',
+  grpc: 'gRPC service', health: 'Health check', fallback: 'Fallback route', runtime: 'Endpoint seen in the running app',
+  express: 'Express route', fastify: 'Fastify route', koa: 'Koa route', hono: 'Hono route', elysia: 'Elysia route', h3: 'h3 route',
+  nest: 'NestJS controller action', next: 'Next.js route handler',
 };
 const MEMBER_MARK = { method: 'M', ctor: 'N', property: 'P', field: 'F', event: 'E' };
 const SHORT = {
@@ -173,6 +175,12 @@ export class Inspector {
       const cursor = file === this.file ? this.cm.getCursor() : null;
       const sameFile = file === this.file;
 
+      if (!sameFile) {
+        const language = languageOf(file);
+        this.cm.setOption('mode', language.mode);
+        this.cm.setOption('indentUnit', language.indent);
+        this.cm.setOption('tabSize', language.indent);
+      }
       this.file = file;
       this.eol = source.text.includes('\r\n') ? '\r\n' : '\n';   // keep the file's line endings on save
       this.dirty = source.dirty;
@@ -380,7 +388,8 @@ export class Inspector {
       for (const e of s.intoOf(a.id, CALL_IN)) callers.push(this.#link(e.source, 'via ' + (s.node(a.parent)?.name ?? '')));
 
     const callable = m.memberKind === 'method' || m.memberKind === 'ctor';
-    return this.#sign(n, esc(`${owner?.name ?? ''}.${n.name}`), esc(`${m.memberKind} in ${owner?.ns ?? ''}`)) +
+    const kind = m.memberKind === 'method' && owner?.meta.typeKind === 'module' ? 'function' : m.memberKind;
+    return this.#sign(n, esc(`${owner?.name ?? ''}.${n.name}`), esc(`${kind} in ${owner?.ns ?? ''}`)) +
       `<pre class="sig">${esc(m.sig)}${m.returns ? esc(' : ' + m.returns) : ''}</pre>` +
       `<div class="chips top">${flags}</div>` +
       this.#actions(
@@ -410,6 +419,7 @@ export class Inspector {
       '<div class="slot" data-slot="endpoint"></div>' +
       this.#section('Handled by', [m.handler, m.target].filter(Boolean).map((id) => this.#link(id))) +
       this.#section('Mapped in', m.declaredIn && m.declaredIn !== m.handler ? [this.#link(m.declaredIn)] : []) +
+      this.#section('Called over HTTP by', s.intoOf(n.id).filter((e) => e.kind === 'http').map((e) => this.#link(e.source, e.label ?? '')), 'requests in the code that reach this endpoint') +
       this.#section('Receives', uses) +
       this.#section('Calls', calls, 'in source order');
   }
@@ -423,7 +433,7 @@ export class Inspector {
     const types = s.childrenOf(n.id, 'type').length;
     const endpoints = s.childrenOf(n.id, 'endpoint').length;
 
-    return this.#sign(n, esc(n.name), esc([m.projectKind, m.tfm].filter(Boolean).join(', '))) +
+    return this.#sign(n, esc(n.name), esc([m.projectKind, m.tfm ?? m.language].filter(Boolean).join(', '))) +
       `<dl class="kv"><dt>Contains</dt><dd>${esc(plural(types, 'type'))}${endpoints ? ', ' + esc(plural(endpoints, 'endpoint')) : ''}</dd>` +
       `<dt>File</dt><dd class="mono">${esc(n.file ?? '')}</dd></dl>` +
       this.#actions(this.#act('toggle', n.id, 'expand', 'Open or close on the map')) +
@@ -436,12 +446,12 @@ export class Inspector {
   _package(n) {
     const s = this.store;
     const usedBy = s.intoOf(n.id).filter((e) => e.kind === 'packageRef').map((e) => this.#link(e.source, e.label ?? ''));
-    return this.#sign(n, esc(n.name), esc('NuGet package ' + (n.meta.versions ?? []).join(', '))) + this.#section('Used by', usedBy);
+    return this.#sign(n, esc(n.name), esc(packageWord(n) + ' ' + (n.meta.versions ?? []).join(', '))) + this.#section('Used by', usedBy);
   }
 
   _external(n) {
     const callers = this.store.intoOf(n.id).map((e) => this.#link(e.source, e.label ?? ''));
-    return this.#sign(n, esc(n.name), n.meta.externalKind === 'db' ? 'Database access through a context outside this solution' : 'Calls made with HttpClient') +
+    return this.#sign(n, esc(n.name), n.meta.externalKind === 'db' ? 'Database access through something the code does not declare itself' : 'Requests to addresses outside the code on the map') +
       this.#section('Used by', callers);
   }
 
@@ -462,8 +472,8 @@ export class Inspector {
   }
 
   #notes(notes) {
-    return '<div class="sign"><div><h2>Load warnings</h2><p>MSBuild reported these while opening the solution. Missing packages usually go away after dotnet restore.</p></div></div>' +
-      this.#actions(this.#act('reload', '', 'reload', 'Load the solution again')) +
+    return '<div class="sign"><div><h2>Load warnings</h2><p>Reported while opening the code. Missing packages usually go away after dotnet restore or npm install.</p></div></div>' +
+      this.#actions(this.#act('reload', '', 'reload', 'Load the code again')) +
       `<div class="rows">${notes.map((x) => `<pre class="sig">${esc(x)}</pre>`).join('')}</div>`;
   }
 

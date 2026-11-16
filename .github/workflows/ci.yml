@@ -1,6 +1,8 @@
 name: CI
 
-# Pull requests are built and tested on Linux, Windows and macOS before they can reach master.
+# Pull requests are built and tested on the self-hosted runner before they can reach master.
+# Pull requests from forks run there too, so keep Settings > Actions > General set to
+# "Require approval for all external contributors": their code then waits until someone has read it.
 
 on:
   pull_request:
@@ -9,20 +11,34 @@ on:
 permissions:
   contents: read
 
+# The steps are bash, on Windows too (Git Bash, put first on the PATH by the "Use Git Bash" step).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
 
     steps:
+      # On Windows the first bash on the PATH can be WSL's bash.exe in System32, which cannot run these steps.
+      - name: Use Git Bash
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Git\bin\bash.exe")) { throw 'Install Git for Windows on this runner: the steps run in Git Bash.' }
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\bin"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+
+      # Sightline reads JavaScript and TypeScript with the TypeScript compiler in Node.js; the tests do too.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Build and test
         run: |
@@ -42,23 +58,34 @@ jobs:
           dotnet pack src/Co.Revington.Sightline.Hosting/Co.Revington.Sightline.Hosting.csproj -c Release -o artifacts
 
       - name: Package the VS Code extension
-        if: runner.os == 'Linux'
         working-directory: vscode
         run: npx --yes @vscode/vsce@4 package --no-dependencies --out ../artifacts/sightline.vsix
 
   # What the pull request does to the map of Sightline itself, as a comment. It uses the Sightline
   # GitHub Action, the way other repositories do, but runs the tool built from the pull request.
   map:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Use Git Bash
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Git\bin\bash.exe")) { throw 'Install Git for Windows on this runner: the steps run in Git Bash.' }
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\bin"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+
+      # The map of Sightline includes the VS Code extension and the JavaScript reader, which are read in Node.js.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Build the tool
         run: dotnet build src/Co.Revington.Sightline -c Release

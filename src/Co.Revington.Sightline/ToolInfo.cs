@@ -22,6 +22,23 @@ internal static class ToolInfo
     }
 }
 
+internal static class Programs
+{
+    /// A program on the PATH, with the extensions Windows would try.
+    public static string? OnPath(string name)
+    {
+        if (Path.IsPathRooted(name)) return File.Exists(name) ? name : null;
+        var extensions = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat", "" } : [""];
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var ext in extensions)
+        {
+            var candidate = Path.Combine(dir.Trim(), name + ext);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+}
+
 internal sealed record DotnetResult(int Code, string Output, string Errors)
 {
     public string All => $"{Output}\n{Errors}".Trim();

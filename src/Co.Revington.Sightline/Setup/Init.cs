@@ -27,7 +27,7 @@ internal static class Init
         if (options.Solution is not null)
         {
             solution = Path.GetFullPath(options.Solution);
-            if (!File.Exists(solution))
+            if (!File.Exists(solution) && !Directory.Exists(solution))
             {
                 Console.Error.WriteLine($"{options.Solution} does not exist.");
                 return 1;
@@ -39,7 +39,7 @@ internal static class Init
             if (solution is null) return 1;
         }
 
-        Console.WriteLine($"Setting up Sightline for {Relative(folder, solution)}");
+        Console.WriteLine(SameFolder(folder, solution) ? "Setting up Sightline for the code in this folder" : $"Setting up Sightline for {Relative(folder, solution)}");
         var ok = true;
         var commit = new List<string>();
 
@@ -83,6 +83,10 @@ internal static class Init
 
     static void Report(string what, string text) => Console.WriteLine($"  {what,-9} {text}");
 
+    static bool SameFolder(string a, string b) =>
+        string.Equals(Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+
     static string Relative(string from, string path) => Path.GetRelativePath(from, path).Replace('\\', '/');
 
     // ---------------------------------------------------------------- solution
@@ -99,8 +103,11 @@ internal static class Init
         if (found.Count == 1) return found[0];
         if (found.Count > 1) return Choose(folder, found);
 
-        Console.Error.WriteLine($"No .sln, .slnx or .csproj file was found in {folder} or the folders below it.");
-        Console.Error.WriteLine("Run init in the folder that holds your solution, or name it with --solution <file>.");
+        // No solution, but JavaScript or TypeScript packages: the folder itself is what opens.
+        if (Languages.TypeScript.NpmPackages.Any(folder)) return folder;
+
+        Console.Error.WriteLine($"No .sln, .slnx, .csproj or package.json file was found in {folder} or the folders below it.");
+        Console.Error.WriteLine("Run init in the folder that holds your code, or name the solution with --solution <file>.");
         return null;
     }
 
@@ -236,14 +243,12 @@ internal static class Init
             return;
         }
 
-        var settings = new JsonObject
-        {
-            ["$schema"] = SightlineConfig.SchemaUrl,
-            ["solution"] = Relative(folder, solution),
-            ["exclude"] = new JsonArray(),
-        };
+        // Without a solution, the folder of sightline.json is what opens, so it needs no "solution".
+        var settings = new JsonObject { ["$schema"] = SightlineConfig.SchemaUrl };
+        if (!SameFolder(folder, solution)) settings["solution"] = Relative(folder, solution);
+        settings["exclude"] = new JsonArray();
         File.WriteAllText(file, settings.ToJsonString(Indented) + Environment.NewLine);
-        Report("created", $"{SightlineConfig.FileName} (opens {Relative(folder, solution)})");
+        Report("created", $"{SightlineConfig.FileName} (opens {(SameFolder(folder, solution) ? "this folder" : Relative(folder, solution))})");
     }
 
     // ---------------------------------------------------------------- VS Code
@@ -256,7 +261,7 @@ internal static class Init
         var task = new JsonObject
         {
             ["label"] = TaskLabel,
-            ["detail"] = "Open the live map of this solution",
+            ["detail"] = "Open the live map of this code",
             ["type"] = "process",
             ["command"] = "dotnet",
             ["args"] = new JsonArray("sightline"),

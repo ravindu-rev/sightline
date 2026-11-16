@@ -14,11 +14,13 @@ internal static class CheckRunner
         Snapshot snapshot;
         try
         {
-            (_, snapshot) = await OneShot.LoadAsync(command.Target);
+            var (session, loaded) = await OneShot.LoadAsync(command.Target);
+            session.Dispose();
+            snapshot = loaded;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("Sightline could not load the solution: " + ex.Message);
+            Console.Error.WriteLine("Sightline could not load the code: " + ex.Message);
             return 2;
         }
 

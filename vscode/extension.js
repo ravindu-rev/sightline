@@ -1,4 +1,4 @@
-// Sightline for VS Code: opens the live map of the solution, shows the method under the cursor on
+// Sightline for VS Code: opens the live map of the folder, shows the method under the cursor on
 // the map, and lists Sightline's problems in the Problems panel.
 //
 // It talks to the same local Sightline server the browser page uses. A map that is already open for
@@ -26,7 +26,7 @@ function activate(context) {
   problems = vscode.languages.createDiagnosticCollection('sightline');
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   status.text = '$(type-hierarchy) Sightline';
-  status.tooltip = 'Open the live map of this solution';
+  status.tooltip = 'Open the live map of this folder';
   status.command = 'sightline.open';
   status.show();
 
@@ -177,11 +177,11 @@ function startMap(folder) {
 /** The map for the current folder; starts one when start is true. */
 async function map(start = true) {
   const folder = workspaceFolder();
-  if (!folder) throw new Error('Open a folder with a .NET solution first.');
+  if (!folder) throw new Error('Open the folder with your code first.');
   const open = await findOpen(folder);
   if (open || !start) return open;
   return vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Sightline: reading the solution…' },
+    { location: vscode.ProgressLocation.Notification, title: 'Sightline: reading the code…' },
     () => startMap(folder));
 }
 
@@ -201,7 +201,8 @@ async function open(hash) {
 /** Shows the method, endpoint or type under the cursor on the map. */
 async function reveal() {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'csharp') throw new Error('Put the cursor in a C# file first.');
+  const languages = ['csharp', 'typescript', 'typescriptreact', 'javascript', 'javascriptreact'];
+  if (!editor || !languages.includes(editor.document.languageId)) throw new Error('Put the cursor in a C#, TypeScript or JavaScript file first.');
   const m = await map();
   follow(m);
 
